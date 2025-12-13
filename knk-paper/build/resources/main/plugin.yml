@@ -1,0 +1,4 @@
+name: KnightsAndKings
+version: 0.1.0
+main: net.knightsandkings.knk.paper.KnKPlugin
+api-version: "1.21"
