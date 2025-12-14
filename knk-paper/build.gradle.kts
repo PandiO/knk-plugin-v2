@@ -22,6 +22,7 @@ tasks {
 
     register<Copy>("deployToDevServer") {
         dependsOn(shadowJar)
+        mustRunAfter(jar)
 
         from(shadowJar.get().archiveFile)
         into(devPluginsDir)
