@@ -20,3 +20,6 @@ Thumbs.db
 knk-core/build
 knk-api-client/build
 knk-paper/build
+knk-api-client/bin
+knk-core/bin
+knk-paper/bin
