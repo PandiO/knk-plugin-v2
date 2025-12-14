@@ -17,3 +17,6 @@ Thumbs.db
 # Logs
 *.log
 .gradle
+knk-core/build
+knk-api-client/build
+knk-paper/build
