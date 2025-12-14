@@ -9,13 +9,14 @@ import net.knightsandkings.knk.paper.commands.HealthCommand;
 import net.knightsandkings.knk.paper.commands.TownsDebugCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
+import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
     private KnkConfig config;
-    private net.knightsandkings.knk.core.services.TownService townService;
+    private TownsQueryApi townsQueryApi;
     
     @Override
     public void onEnable() {
@@ -45,14 +46,15 @@ public class KnKPlugin extends JavaPlugin {
                 getLogger().warning("WARNING: SSL certificate validation is DISABLED. Only use in development!");
             }
             
-            // Init services (ports provided by API client)
-            this.townService = new net.knightsandkings.knk.core.services.TownService(apiClient.getTownsApi());
+            // Wire TownsQueryApi from client
+            this.townsQueryApi = apiClient.getTownsQueryApi();
+            getLogger().info("TownsQueryApi wired from API client");
 
             // Register commands
             registerCommands();
             PluginCommand townsCmd = getCommand("knk-towns");
             if (townsCmd != null) {
-                townsCmd.setExecutor(new TownsDebugCommand(townService));
+                townsCmd.setExecutor(new TownsDebugCommand(this, townsQueryApi));
                 getLogger().info("Registered /knk-towns debug command");
             } else {
                 getLogger().warning("Failed to register /knk-towns command - not defined in plugin.yml?");
