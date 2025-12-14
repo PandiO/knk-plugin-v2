@@ -5,12 +5,8 @@ api-version: "1.21"
 
 commands:
   knk:
-    description: KnK admin commands (health, towns, etc)
-    usage: /knk health | /knk towns list [page] [size] | /knk town <id>
-    permission: knk.admin
-  knk-towns:
-    description: KnK towns debug commands
-    usage: /knk-towns list [page] [size] | /knk-towns town <id>
+    description: KnK admin and debug commands
+    usage: /knk help
     permission: knk.admin
     
 permissions:

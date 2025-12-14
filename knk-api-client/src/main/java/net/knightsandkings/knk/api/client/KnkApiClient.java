@@ -6,8 +6,10 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.impl.HealthApiImpl;
 import net.knightsandkings.knk.api.impl.TownsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.LocationsQueryApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;
@@ -30,6 +32,7 @@ public class KnkApiClient {
     
     private final HealthApi healthApi;
     private final TownsQueryApi townsQueryApi;
+    private final LocationsQueryApi locationsQueryApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -48,6 +51,7 @@ public class KnkApiClient {
         // Initialize API implementations
         this.healthApi = new HealthApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.townsQueryApi = new TownsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.locationsQueryApi = new LocationsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -57,6 +61,7 @@ public class KnkApiClient {
     public TownsQueryApi getTownsQueryApi() {
         return townsQueryApi;
     }
+    public LocationsQueryApi getLocationsQueryApi() { return locationsQueryApi; }
     
     /**
      * Shutdown the client and release resources.

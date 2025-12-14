@@ -5,11 +5,11 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
-import net.knightsandkings.knk.paper.commands.HealthCommand;
-import net.knightsandkings.knk.paper.commands.TownsDebugCommand;
+import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -17,6 +17,7 @@ public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
     private KnkConfig config;
     private TownsQueryApi townsQueryApi;
+    private LocationsQueryApi locationsQueryApi;
     
     @Override
     public void onEnable() {
@@ -48,17 +49,12 @@ public class KnKPlugin extends JavaPlugin {
             
             // Wire TownsQueryApi from client
             this.townsQueryApi = apiClient.getTownsQueryApi();
+            this.locationsQueryApi = apiClient.getLocationsQueryApi();
             getLogger().info("TownsQueryApi wired from API client");
+            getLogger().info("LocationsQueryApi wired from API client");
 
             // Register commands
             registerCommands();
-            PluginCommand townsCmd = getCommand("knk-towns");
-            if (townsCmd != null) {
-                townsCmd.setExecutor(new TownsDebugCommand(this, townsQueryApi));
-                getLogger().info("Registered /knk-towns debug command");
-            } else {
-                getLogger().warning("Failed to register /knk-towns command - not defined in plugin.yml?");
-            }
             
             getLogger().info("KnightsAndKings Plugin Enabled!");
             
@@ -84,8 +80,8 @@ public class KnKPlugin extends JavaPlugin {
     private void registerCommands() {
         PluginCommand knkCommand = getCommand("knk");
         if (knkCommand != null) {
-            knkCommand.setExecutor(new HealthCommand(this, apiClient.getHealthApi()));
-            getLogger().info("Registered /knk health command");
+            knkCommand.setExecutor(new KnkAdminCommand(this, apiClient.getHealthApi(), townsQueryApi, locationsQueryApi));
+            getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");
         }
