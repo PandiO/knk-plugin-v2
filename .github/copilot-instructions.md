@@ -21,6 +21,11 @@ Package root: net.knightsandkings.knk
 - All HTTP calls must run via CompletableFuture using a dedicated ExecutorService.
 - Any Bukkit/Paper world/state mutations must run on the main thread via the scheduler.
 
+## Migration mode (critical)
+- Entity migrations MUST follow `docs/MIGRATION_MODE_READONLY.md` unless an ADR explicitly allows write/hybrid scope.
+- Default: READ-ONLY (search/getById only, no create/update/delete, no world mutations).
+- Use `spec/api/swagger.json` as the source of truth for endpoints and DTO schemas.
+
 ## API integration rules
 - Define ports in knk-core (core.ports.api.*) returning CompletableFuture.
 - Implement ports in knk-api-client (api.impl.*) using OkHttp + Jackson.
