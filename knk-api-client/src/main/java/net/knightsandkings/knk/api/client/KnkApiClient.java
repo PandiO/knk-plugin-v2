@@ -9,10 +9,12 @@ import net.knightsandkings.knk.api.impl.HealthApiImpl;
 import net.knightsandkings.knk.api.impl.TownsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.LocationsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.DistrictsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.StreetsQueryApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;
@@ -37,6 +39,7 @@ public class KnkApiClient {
     private final TownsQueryApi townsQueryApi;
     private final LocationsQueryApi locationsQueryApi;
     private final DistrictsQueryApi districtsQueryApi;
+    private final StreetsQueryApi streetsQueryApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -57,6 +60,7 @@ public class KnkApiClient {
         this.townsQueryApi = new TownsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.locationsQueryApi = new LocationsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.districtsQueryApi = new DistrictsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.streetsQueryApi = new StreetsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -73,6 +77,10 @@ public class KnkApiClient {
     
     public DistrictsQueryApi getDistrictsQueryApi() {
         return districtsQueryApi;
+    }
+
+    public StreetsQueryApi getStreetsQueryApi() {
+        return streetsQueryApi;
     }
     
     /**

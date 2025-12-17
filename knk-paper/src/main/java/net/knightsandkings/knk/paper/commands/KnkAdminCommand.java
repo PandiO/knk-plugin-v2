@@ -4,6 +4,7 @@ import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -21,7 +22,7 @@ public class KnkAdminCommand implements CommandExecutor {
     private final CommandRegistry registry = new CommandRegistry();
     private final HelpSubcommand helpSubcommand;
 
-    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi, DistrictsQueryApi districtsApi) {
+    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi, DistrictsQueryApi districtsApi, StreetsQueryApi streetsApi) {
         this.helpSubcommand = new HelpSubcommand(registry);
         
         // Register health
@@ -94,6 +95,26 @@ public class KnkAdminCommand implements CommandExecutor {
                         return true;
                     }
                     return locationHereCommand.onCommand(sender, null, "knk", new String[0]);
+                }
+        );
+        
+        // Register streets
+        StreetsDebugCommand streetsCommand = new StreetsDebugCommand(plugin, streetsApi);
+        registry.register(
+                new CommandMetadata("streets", "List or search streets", "/knk streets list [page] [size]", "knk.admin",
+                        List.of("/knk streets list", "/knk streets list 1 10")),
+                (sender, args) -> streetsCommand.onCommand(sender, null, "knk", args)
+        );
+        
+        // Register street (alias for get by ID)
+        registry.register(
+                new CommandMetadata("street", "Get street details by ID", "/knk street <id>", "knk.admin",
+                        List.of("/knk street 1")),
+                (sender, args) -> {
+                    String[] adjusted = new String[args.length + 1];
+                    adjusted[0] = "street";
+                    System.arraycopy(args, 0, adjusted, 1, args.length);
+                    return streetsCommand.onCommand(sender, null, "knk", adjusted);
                 }
         );
         

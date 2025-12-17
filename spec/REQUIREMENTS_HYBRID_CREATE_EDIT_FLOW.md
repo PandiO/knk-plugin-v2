@@ -1,3 +1,26 @@
+## 0. How to Use This Document
+
+**Two independent workstreams are defined:**
+
+1. **Workstream A: Hybrid Create/Edit Workflow (Phase 1 - Sections 14-20)**
+   - Multi-step form progression with world-bound tasks
+   - No validation framework needed
+   - Can be implemented independently
+   - Acceptance: Admin creates Town → completes world tasks → entity finalizes
+
+2. **Workstream B: Conditional Validation Framework (Phase 2 - Section 23)**
+   - Cross-field validation rules
+   - Depends on FormField (already exists)
+   - Can be implemented in parallel or after Phase 1
+   - Acceptance: Admin configures validation rule → validation executes on field change
+
+**For implementation:**
+- See [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) for detailed Sprint plan and instruction examples
+- Each workstream can be assigned to separate teams
+- Sections marked "🔄 Workstream A" or "🔄 Workstream B" show dependencies
+
+---
+
 # Knights & Kings — Requirements: Hybrid Create/Edit Flow (Web App ⇄ Minecraft ⇄ Web API)
 
 **Document ID:** KKNK-REQ-HYBRID-FLOW  
@@ -306,6 +329,8 @@ The system must support mapping a Web App admin to an in-game identity to allow 
 ---
 
 ## 14. FormConfig Architecture Snapshot
+
+🔄 **Workstream A:** Hybrid workflow uses existing FormConfig infrastructure
 
 ### Current Implementation (as discovered in codebase)
 
@@ -761,6 +786,8 @@ public class RegionContainmentRule
 
 ## 20. What to Implement Next (Ordered Checklist)
 
+🔄 **Workstream A — Phase 1 Implementation**
+
 ### Backend (API)
 
 1. **Create entities:** `WorkflowSession`, `StepProgress`, `WorldTask`, `RegionContainmentRule`, `Location`
@@ -817,15 +844,838 @@ For each entity (Town, District, Street, Structure, …), the feature is "Done" 
 
 ---
 
+## 23. Conditional Validation Framework (Field-Level Validations)
+
+🔄 **Workstream B — Phase 2 Implementation** (Independent from Workstream A)
+
+### 23.1 Overview
+
+The **Conditional Validation Framework** enables administrators to define dynamic, cross-field validation rules that execute at **field-level** (not step-level or entity-level in v1). These rules can validate field values against related entity data via API calls.
+
+**Primary Use Cases (v1):**
+- Validate Location coordinates are **inside** a WorldGuard region (defined earlier in the form)
+- Validate a child region is **fully contained** within a parent region (from related entity)
+- Extensible for future validators (e.g., "check name is unique", "coordinate within world bounds")
+
+**Key Constraint:** Field validations assume that dependency fields are filled out before validation executes. Admin is responsible for field ordering in FormConfiguration. System provides warnings if dependency not yet filled; once filled, validations execute automatically.
+
+---
+
+### 23.2 Entity Models: FieldValidationRule
+
+#### FieldValidationRule.cs
+```csharp
+using System;
+using System.Collections.Generic;
+
+namespace knkwebapi_v2.Models
+{
+    /// <summary>
+    /// Represents a validation rule attached to a FormField.
+    /// 
+    /// SCENARIO:
+    /// - Field: District's SpawnLocationId
+    /// - Rule: Location must be inside the District's Town's WorldGuard region
+    /// - Config: depends on district TownId field; fetches Town's WgRegionId; validates Location inside region
+    /// 
+    /// EXECUTION FLOW (Frontend):
+    /// 1. User fills District.TownId field (selects a Town)
+    /// 2. System stores selected Town entity (at least {id, WgRegionId})
+    /// 3. User fills District.SpawnLocationId (selects or creates Location)
+    /// 4. On location selection/creation:
+    ///    a. Check if dependency field (TownId) is filled → if not, show warning "Cannot validate until Town selected"
+    ///    b. If filled, fetch Town data from form context
+    ///    c. Invoke validation API (regions.validateLocationInside) with {townWgRegionId, locationCoords}
+    ///    d. Show result: ✅ success or ❌ failure with error message
+    /// 5. If IsBlocking = true and validation failed, prevent step progression
+    /// </summary>
+    public class FieldValidationRule
+    {
+        public int Id { get; set; }
+
+        /// <summary>
+        /// Foreign key to the FormField this rule is attached to.
+        /// </summary>
+        public int FormFieldId { get; set; }
+        public FormField FormField { get; set; } = null!;
+
+        /// <summary>
+        /// Type of validation to perform.
+        /// 
+        /// Supported types (v1):
+        /// - "LocationInsideRegion": Validates Location coordinates are inside a WorldGuard region
+        /// - "RegionContainment": Validates child region is fully contained within parent region
+        /// 
+        /// Future types:
+        /// - "UniqueInEntity": Field value is unique within entity scope
+        /// - "CustomApiCall": Invoke arbitrary validation API endpoint
+        /// </summary>
+        public string ValidationType { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Foreign key to the FormField this rule depends on (for data retrieval).
+        /// 
+        /// EXAMPLE:
+        /// - This rule is on LocationId field
+        /// - DependsOnFieldId = TownId field
+        /// - At validation time, system fetches the TownId value from form context
+        /// - Uses TownId to fetch Town entity
+        /// - Extracts Town.WgRegionId for validation
+        /// 
+        /// If NULL, rule does not depend on another field (e.g., "check email is unique")
+        /// </summary>
+        public int? DependsOnFieldId { get; set; }
+        public FormField? DependsOnField { get; set; }
+
+        /// <summary>
+        /// Generic JSON configuration for this validation rule.
+        /// Structure varies by ValidationType.
+        /// 
+        /// EXAMPLE ConfigJson for "LocationInsideRegion":
+        /// {
+        ///   "validationApiMethod": "regions.validateLocationInside",
+        ///   "dependencyPath": "TownId",           // Path to fetch dependency (field name or nav property)
+        ///   "parentEntityRegionProperty": "WgRegionId",  // Which property on parent entity holds region ID
+        ///   "childCoordinatesFromField": "SpawnLocationId",  // Field containing location data
+        ///   "successMessage": "Location is within town boundaries.",
+        ///   "failMessage": "Location is outside town boundaries. Select a location within {parentEntityName}."
+        /// }
+        /// 
+        /// EXAMPLE ConfigJson for "RegionContainment":
+        /// {
+        ///   "validationApiMethod": "regions.validateRegionContained",
+        ///   "dependencyPath": "TownId",
+        ///   "parentEntityRegionProperty": "WgRegionId",
+        ///   "childRegionIdFromField": "WgRegionId",  // Field on current entity containing child region
+        ///   "successMessage": "District region is fully contained within town region.",
+        ///   "failMessage": "District region extends outside town region. Adjust your selection."
+        /// }
+        /// </summary>
+        public string ConfigJson { get; set; } = "{}";
+
+        /// <summary>
+        /// Error message displayed to user if validation fails.
+        /// Supports placeholders: {parentEntityName}, {regionName}, {fieldLabel}
+        /// Backend validation API returns placeholder values.
+        /// </summary>
+        public string ErrorMessage { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Success message displayed if validation passes.
+        /// Optional; if empty, just clears error state.
+        /// </summary>
+        public string? SuccessMessage { get; set; }
+
+        /// <summary>
+        /// If true, validation failure blocks field completion and step progression.
+        /// If false, validation is informational only (warning badge shown but no blocking).
+        /// </summary>
+        public bool IsBlocking { get; set; } = true;
+
+        /// <summary>
+        /// If false, validation is skipped if the dependency field is not yet filled.
+        /// If true, validation failure message shown even if dependency not filled.
+        /// Default: false (more forgiving UX).
+        /// </summary>
+        public bool RequiresDependencyFilled { get; set; } = false;
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+}
+```
+
+---
+
+### 23.3 API Contract: Validation Rule Management
+
+#### Endpoints (for FormConfiguration admin UI)
+
+```csharp
+// List validation rules for a field
+GET /api/forms/fields/{fieldId}/validationrules
+Response: FieldValidationRuleDto[]
+
+// Get a specific validation rule
+GET /api/forms/validationrules/{ruleId}
+Response: FieldValidationRuleDto
+
+// Create validation rule
+POST /api/forms/validationrules
+Body: CreateFieldValidationRuleDto { formFieldId, validationType, dependsOnFieldId, configJson, errorMessage, successMessage, isBlocking }
+Response: FieldValidationRuleDto
+
+// Update validation rule
+PUT /api/forms/validationrules/{ruleId}
+Body: UpdateFieldValidationRuleDto { validationType, configJson, errorMessage, successMessage, isBlocking }
+Response: FieldValidationRuleDto
+
+// Delete validation rule
+DELETE /api/forms/validationrules/{ruleId}
+Response: 204 No Content
+
+// Validate a field value against all its rules (used by form wizard)
+POST /api/forms/validationrules/validate
+Body: ValidateFieldDto { 
+  fieldId, 
+  fieldValue, 
+  formContextData // all step data collected so far
+}
+Response: ValidationResultDto { 
+  isValid, 
+  message, 
+  placeholders, 
+  isBlocking 
+}
+```
+
+#### DTO Shapes
+
+```csharp
+public class FieldValidationRuleDto
+{
+    public int Id { get; set; }
+    public int FormFieldId { get; set; }
+    public string ValidationType { get; set; } = string.Empty;
+    public int? DependsOnFieldId { get; set; }
+    public string ConfigJson { get; set; } = "{}";
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string? SuccessMessage { get; set; }
+    public bool IsBlocking { get; set; } = true;
+    public bool RequiresDependencyFilled { get; set; } = false;
+}
+
+public class CreateFieldValidationRuleDto
+{
+    public int FormFieldId { get; set; }
+    public string ValidationType { get; set; } = string.Empty;
+    public int? DependsOnFieldId { get; set; }
+    public string ConfigJson { get; set; } = "{}";
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string? SuccessMessage { get; set; }
+    public bool IsBlocking { get; set; } = true;
+}
+
+public class UpdateFieldValidationRuleDto
+{
+    public string ValidationType { get; set; } = string.Empty;
+    public int? DependsOnFieldId { get; set; }
+    public string ConfigJson { get; set; } = "{}";
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string? SuccessMessage { get; set; }
+    public bool IsBlocking { get; set; } = true;
+}
+
+public class ValidateFieldDto
+{
+    public int FieldId { get; set; }
+    public object? FieldValue { get; set; }
+    public Dictionary<string, object?> FormContextData { get; set; } = new();  // {fieldName: value}
+}
+
+public class ValidationResultDto
+{
+    public bool IsValid { get; set; }
+    public string? Message { get; set; }
+    public Dictionary<string, string>? Placeholders { get; set; }  // {placeholderName: value}
+    public bool IsBlocking { get; set; }
+}
+```
+
+---
+
+### 23.4 Validation Methods (Hardcoded for v1)
+
+**Validation Method Registry (Backend):**
+
+```csharp
+// In a new ValidationMethodRegistry.cs or ValidationService.cs
+public interface IValidationMethod
+{
+    string MethodName { get; }
+    Task<ValidationResultDto> ExecuteAsync(
+        FieldValidationRule rule,
+        object? fieldValue,
+        Dictionary<string, object?> formContextData
+    );
+}
+
+// Implementation: regions.validateLocationInside
+public class LocationInsideRegionValidator : IValidationMethod
+{
+    public string MethodName => "regions.validateLocationInside";
+
+    public async Task<ValidationResultDto> ExecuteAsync(
+        FieldValidationRule rule,
+        object? fieldValue,
+        Dictionary<string, object?> formContextData
+    )
+    {
+        // 1. Parse ConfigJson
+        var config = JsonSerializer.Deserialize<LocationInsideRegionConfig>(rule.ConfigJson);
+        
+        // 2. Fetch dependency field value (e.g., TownId from form context)
+        if (!formContextData.TryGetValue(config!.DependencyPath, out var parentEntityId) || parentEntityId == null)
+        {
+            return new ValidationResultDto 
+            { 
+                IsValid = rule.RequiresDependencyFilled == false,  // Pass if dependency not required
+                Message = $"Validation pending until {config.DependencyPath} is filled.",
+                IsBlocking = false
+            };
+        }
+
+        // 3. Fetch parent entity to get region ID (e.g., Town with WgRegionId)
+        var parentEntity = await entityService.GetByIdAsync("Town", (int)parentEntityId);
+        if (parentEntity == null)
+        {
+            return new ValidationResultDto 
+            { 
+                IsValid = false,
+                Message = "Parent entity not found.",
+                IsBlocking = rule.IsBlocking
+            };
+        }
+
+        var regionId = parentEntity.GetProperty(config.ParentEntityRegionProperty) as string;
+        if (string.IsNullOrEmpty(regionId))
+        {
+            return new ValidationResultDto 
+            { 
+                IsValid = false,
+                Message = $"Parent entity has no {config.ParentEntityRegionProperty} defined.",
+                IsBlocking = rule.IsBlocking
+            };
+        }
+
+        // 4. Validate location inside region (call WorldGuard API)
+        var location = fieldValue as Location;
+        if (location == null)
+        {
+            return new ValidationResultDto 
+            { 
+                IsValid = false,
+                Message = "Invalid location data.",
+                IsBlocking = rule.IsBlocking
+            };
+        }
+
+        var isInside = await regionService.IsLocationInsideAsync(regionId, location);
+
+        return new ValidationResultDto 
+        { 
+            IsValid = isInside,
+            Message = isInside ? rule.SuccessMessage : rule.ErrorMessage,
+            Placeholders = isInside ? null : new Dictionary<string, string>
+            {
+                { "parentEntityName", parentEntity.Name },
+                { "regionName", regionId }
+            },
+            IsBlocking = rule.IsBlocking
+        };
+    }
+}
+
+// Implementation: regions.validateRegionContained
+public class RegionContainmentValidator : IValidationMethod
+{
+    public string MethodName => "regions.validateRegionContained";
+
+    public async Task<ValidationResultDto> ExecuteAsync(
+        FieldValidationRule rule,
+        object? fieldValue,
+        Dictionary<string, object?> formContextData
+    )
+    {
+        // Similar pattern: fetch parent region, validate child region inside
+        // ... implementation
+    }
+}
+
+// Service to dispatch to correct validator
+public class ValidationService
+{
+    private readonly Dictionary<string, IValidationMethod> _validators;
+
+    public ValidationService()
+    {
+        _validators = new Dictionary<string, IValidationMethod>
+        {
+            { "regions.validateLocationInside", new LocationInsideRegionValidator(...) },
+            { "regions.validateRegionContained", new RegionContainmentValidator(...) }
+        };
+    }
+
+    public async Task<ValidationResultDto> ValidateFieldAsync(
+        FieldValidationRule rule,
+        object? fieldValue,
+        Dictionary<string, object?> formContextData
+    )
+    {
+        var config = JsonSerializer.Deserialize<dynamic>(rule.ConfigJson);
+        var methodName = config?["validationApiMethod"]?.ToString();
+
+        if (!_validators.TryGetValue(methodName, out var validator))
+        {
+            return new ValidationResultDto 
+            { 
+                IsValid = false,
+                Message = $"Unknown validation method: {methodName}",
+                IsBlocking = false
+            };
+        }
+
+        return await validator.ExecuteAsync(rule, fieldValue, formContextData);
+    }
+}
+```
+
+---
+
+### 23.5 Frontend Integration: Validation Rule Builder UI
+
+**New Component: `ValidationRuleBuilder.tsx`**
+
+Located in: `Repository/knk-web-app/src/components/FormConfigBuilder/ValidationRuleBuilder.tsx`
+
+```tsx
+export interface ValidationRuleBuilderProps {
+    field: FormFieldDto;
+    otherFields: FormFieldDto[];  // Fields available in this form
+    onSave: (rule: FieldValidationRuleDto) => void;
+    onCancel: () => void;
+}
+
+/**
+ * UI for admin to configure validation rules on a FormField.
+ * 
+ * Flow:
+ * 1. Admin selects ValidationType (e.g., "LocationInsideRegion")
+ * 2. System shows form fields specific to that type
+ * 3. Admin selects DependsOnField from dropdown (e.g., "TownId")
+ * 4. Admin enters error/success messages
+ * 5. Admin toggles IsBlocking
+ * 6. On save, generate ConfigJson and POST to API
+ */
+export const ValidationRuleBuilder: React.FC<ValidationRuleBuilderProps> = ({
+    field,
+    otherFields,
+    onSave,
+    onCancel
+}) => {
+    const [ruleType, setRuleType] = useState<'LocationInsideRegion' | 'RegionContainment'>('LocationInsideRegion');
+    const [dependsOnFieldId, setDependsOnFieldId] = useState<number | null>(null);
+    const [errorMessage, setErrorMessage] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
+    const [isBlocking, setIsBlocking] = useState(true);
+
+    const availableDependencyFields = otherFields.filter(f => f.id !== field.id);
+
+    const handleSave = () => {
+        if (!dependsOnFieldId || !errorMessage.trim()) {
+            alert('Please fill all required fields');
+            return;
+        }
+
+        const configJson = {
+            validationApiMethod: ruleType === 'LocationInsideRegion'
+                ? 'regions.validateLocationInside'
+                : 'regions.validateRegionContained',
+            dependencyPath: otherFields.find(f => f.id === dependsOnFieldId)?.fieldName,
+            parentEntityRegionProperty: 'WgRegionId',  // TODO: Make configurable
+            childCoordinatesFromField: field.fieldName,
+            successMessage
+        };
+
+        onSave({
+            validationType: ruleType,
+            dependsOnFieldId,
+            errorMessage,
+            successMessage,
+            isBlocking,
+            configJson: JSON.stringify(configJson)
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md">
+                <h3 className="text-lg font-medium mb-4">Add Validation Rule</h3>
+
+                <div className="space-y-4">
+                    {/* Rule Type Selection */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Rule Type</label>
+                        <select
+                            value={ruleType}
+                            onChange={(e) => setRuleType(e.target.value as any)}
+                            className="w-full border rounded px-2 py-1"
+                        >
+                            <option value="LocationInsideRegion">Location Inside Region</option>
+                            <option value="RegionContainment">Region Contained in Parent Region</option>
+                        </select>
+                    </div>
+
+                    {/* Dependency Field Selection */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1">
+                            Depends on Field *
+                        </label>
+                        <select
+                            value={dependsOnFieldId || ''}
+                            onChange={(e) => setDependsOnFieldId(Number(e.target.value))}
+                            className="w-full border rounded px-2 py-1"
+                        >
+                            <option value="">-- Select dependency field --</option>
+                            {availableDependencyFields.map(f => (
+                                <option key={f.id} value={f.id}>
+                                    {f.label || f.fieldName}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-600 mt-1">
+                            ⚠️ Admin must order fields so this field comes after dependency field
+                        </p>
+                    </div>
+
+                    {/* Error Message */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1">
+                            Error Message *
+                        </label>
+                        <textarea
+                            value={errorMessage}
+                            onChange={(e) => setErrorMessage(e.target.value)}
+                            placeholder="e.g., Location is outside the region bounds. Select a location within {parentEntityName}."
+                            rows={2}
+                            className="w-full border rounded px-2 py-1"
+                        />
+                        <p className="text-xs text-gray-600 mt-1">
+                            Supported placeholders: {'{parentEntityName}'}, {'{regionName}'}, {'{fieldLabel}'}
+                        </p>
+                    </div>
+
+                    {/* Success Message (optional) */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Success Message (optional)</label>
+                        <input
+                            type="text"
+                            value={successMessage}
+                            onChange={(e) => setSuccessMessage(e.target.value)}
+                            placeholder="e.g., Location is within region bounds."
+                            className="w-full border rounded px-2 py-1"
+                        />
+                    </div>
+
+                    {/* Blocking Toggle */}
+                    <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            checked={isBlocking}
+                            onChange={(e) => setIsBlocking(e.target.checked)}
+                            id="blocking"
+                        />
+                        <label htmlFor="blocking" className="ml-2 text-sm">
+                            Block form progress if validation fails
+                        </label>
+                    </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 mt-6">
+                    <button onClick={onCancel} className="btn-secondary">Cancel</button>
+                    <button onClick={handleSave} className="btn-primary">Add Rule</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+```
+
+---
+
+### 23.6 Frontend Integration: FieldRenderer Validation Execution
+
+**Updates to [FieldRenderer.tsx](FieldRenderers.tsx):**
+
+Field renderers need to accept validation rules and execute them. The component already has:
+- `allStepsData` prop (currently unused) — provides form context for dependency resolution
+- `currentStepIndex` prop (currently unused)
+- `errors` prop (currently unused)
+
+```tsx
+// In FieldRenderer or in wrapper component (e.g., FormWizardStep)
+
+const executeValidationRules = async (
+    field: FormFieldDto,
+    fieldValue: any,
+    formContextData: { [fieldName: string]: any }
+) => {
+    const rules = field.validationRules || [];
+    const results: ValidationResultDto[] = [];
+
+    for (const rule of rules) {
+        try {
+            const result = await validationClient.validateField({
+                fieldId: field.id!,
+                fieldValue,
+                formContextData
+            });
+            results.push(result);
+        } catch (error) {
+            console.error('Validation error:', error);
+        }
+    }
+
+    return results;
+};
+
+// On field value change:
+const handleFieldChange = async (newValue: any) => {
+    onChange(newValue);
+    
+    // Execute validations
+    if (field.validationRules && field.validationRules.length > 0) {
+        const results = await executeValidationRules(field, newValue, allStepsData);
+        
+        // Show validation results
+        const failedBlockingRules = results.filter(r => !r.isValid && r.isBlocking);
+        const failedWarnings = results.filter(r => !r.isValid && !r.isBlocking);
+        const successes = results.filter(r => r.isValid);
+
+        setValidationStatus({
+            isValid: failedBlockingRules.length === 0,
+            messages: {
+                success: successes.map(r => r.message).filter(m => m),
+                error: failedBlockingRules.map(r => r.message).filter(m => m),
+                warning: failedWarnings.map(r => r.message).filter(m => m)
+            }
+        });
+    }
+};
+```
+
+**Display in Field:**
+
+```tsx
+// After field input, show validation status
+{validationStatus.messages.success.length > 0 && (
+    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
+        ✅ {validationStatus.messages.success.join(' ')}
+    </div>
+)}
+
+{validationStatus.messages.warning.length > 0 && (
+    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+        ⚠️ {validationStatus.messages.warning.join(' ')}
+    </div>
+)}
+
+{validationStatus.messages.error.length > 0 && (
+    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+        ❌ {validationStatus.messages.error.join(' ')}
+    </div>
+)}
+```
+
+---
+
+### 23.7 Updated Town v1 FormConfig Template with Validation Rules
+
+#### Step 3: World Data (Updated)
+
+```csharp
+[WorkflowStep(order: 3, name: "World Data", requiresMinecraft: true)]
+public class TownCreateDto_Step3
+{
+    [WorldBoundField(TaskType = "DefineRegion", fieldLabel: "Town Region")]
+    public string? WgRegionId { get; set; }
+
+    [WorldBoundField(TaskType = "CaptureLocation", fieldLabel: "Spawn Location")]
+    [ValidationRule(ValidationType = "LocationInsideRegion", DependsOnField = "WgRegionId")]
+    public int? SpawnLocationId { get; set; }
+}
+```
+
+**Configuration in FormConfigBuilder UI:**
+
+1. Admin creates FormField for `WgRegionId` (order 1)
+2. Admin creates FormField for `SpawnLocationId` (order 2)
+3. Admin adds ValidationRule to `SpawnLocationId`:
+   - **ValidationType:** LocationInsideRegion
+   - **DependsOnField:** WgRegionId
+   - **ErrorMessage:** "Location is outside town region boundaries. Select a location within the town."
+   - **SuccessMessage:** "Location is within town boundaries."
+   - **IsBlocking:** true
+
+4. Admin saves FormConfiguration
+
+**Runtime Flow (Form Filler):**
+
+1. User fills `WgRegionId` (selects or creates town region)
+2. User fills `SpawnLocationId` (selects or creates location)
+3. On location selection:
+   - Frontend checks: is `WgRegionId` filled? → Yes
+   - Frontend fetches form context: `{ WgRegionId: "town_main_123" }`
+   - Frontend calls validation API: `POST /api/forms/validationrules/validate`
+   - Backend validator runs: `IsLocationInsideAsync("town_main_123", {x,y,z})`
+   - Result: Valid ✅ → shows success message
+4. User can proceed to next step
+
+**If User Fills in Different Order:**
+
+1. User tries to fill `SpawnLocationId` first (before `WgRegionId`)
+2. On location selection:
+   - Frontend checks: is `WgRegionId` filled? → No
+   - Shows warning: "⚠️ Validation pending until Town Region is defined"
+   - Does NOT validate (RequiresDependencyFilled = false)
+   - User can continue
+3. Later, user fills `WgRegionId`
+4. Frontend automatically re-validates `SpawnLocationId` against new region
+5. Shows success/failure accordingly
+
+---
+
+### 23.8 Implementation Separation: Hybrid Workflow vs Validation Framework
+
+**These are TWO INDEPENDENT WORKSTREAMS:**
+
+#### **Workstream A: Hybrid Create/Edit Workflow**
+- Entities: `WorkflowSession`, `StepProgress`, `WorldTask`
+- Services: `IWorkflowService`, `IWorldTaskService`
+- Controllers: `WorkflowsController`, `WorldTasksController`
+- UI: `WizardStepContainer`, `WorldBoundFieldRenderer`
+- **Does NOT depend on:** FieldValidationRule, validation framework
+- **Can be implemented independently:** Yes
+- **Prerequisite for:** Basic multi-step form progression, task polling, finalization
+- **Acceptance:** Admin can create Town in 3 steps; regions/locations captured via game tasks
+
+#### **Workstream B: Conditional Validation Framework**
+- Entities: `FieldValidationRule`
+- Services: `IValidationService`, `IValidationMethod` implementations
+- Controllers: `/api/forms/validationrules/*`
+- UI: `ValidationRuleBuilder`, updates to `FieldRenderer`
+- **Depends on:** FormField already existing (✅ already in codebase)
+- **Does NOT depend on:** Workstream A (Hybrid workflow)
+- **Can be implemented independently:** Yes, in parallel or after Workstream A
+- **Can be tested independently:** Yes, via standalone form validation API tests
+- **Acceptance:** Admin can configure validation rule on Location field; rule executes and blocks invalid locations
+
+---
+
+**RECOMMENDATION:** Implement in order:
+1. **Phase 1 (Workstream A):** Hybrid Workflow (sections 17-20)
+2. **Phase 2 (Workstream B):** Validation Framework (this section 23)
+
+This allows Phase 1 to ship without validation, then Phase 2 can add smart validations retroactively.
+
+---
+
+### 23.9 Breaking Dependency Detection & Feedback
+
+To address Q2 (good feedback for broken dependencies):
+
+**On FieldValidationRule Load (FormConfiguration UI):**
+
+```csharp
+public class FormConfigurationService
+{
+    public async Task<List<ValidationIssue>> ValidateConfigurationAsync(FormConfiguration config)
+    {
+        var issues = new List<ValidationIssue>();
+
+        foreach (var step in config.Steps)
+        {
+            foreach (var field in step.Fields)
+            {
+                foreach (var rule in field.ValidationRules)
+                {
+                    // Check 1: Does dependency field exist?
+                    if (rule.DependsOnFieldId != null)
+                    {
+                        var depField = config.Steps
+                            .SelectMany(s => s.Fields)
+                            .FirstOrDefault(f => f.Id == rule.DependsOnFieldId);
+
+                        if (depField == null)
+                        {
+                            issues.Add(new ValidationIssue
+                            {
+                                Severity = IssueSeverity.Error,
+                                Message = $"Field '{field.Label}' has validation rule depending on deleted field (ID: {rule.DependsOnFieldId})",
+                                FieldId = field.Id,
+                                RuleId = rule.Id
+                            });
+                        }
+                    }
+
+                    // Check 2: Does dependency come BEFORE this field in form flow?
+                    if (rule.DependsOnFieldId != null)
+                    {
+                        var depField = config.Steps
+                            .SelectMany((s, stepIdx) => s.Fields.Select(f => (Field: f, StepIndex: stepIdx, Field.Order)))
+                            .FirstOrDefault(x => x.Field.Id == rule.DependsOnFieldId);
+
+                        var currentField = step.Fields.FirstOrDefault(f => f.Id == field.Id);
+                        var currentStepIndex = config.Steps.IndexOf(step);
+
+                        if (depField.StepIndex > currentStepIndex || 
+                            (depField.StepIndex == currentStepIndex && depField.Order > currentField?.Order))
+                        {
+                            issues.Add(new ValidationIssue
+                            {
+                                Severity = IssueSeverity.Warning,
+                                Message = $"Field '{field.Label}' depends on '{depField.Field.Label}' which comes AFTER it. Admin should reorder fields.",
+                                FieldId = field.Id,
+                                RuleId = rule.Id
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return issues;
+    }
+}
+```
+
+**Display in FormConfigBuilder UI:**
+
+```tsx
+// Show validation issues as "Configuration Health"
+<div className="mt-4 border-t pt-4">
+    <h4 className="font-medium mb-2">Configuration Health</h4>
+    {validationIssues.length === 0 ? (
+        <p className="text-sm text-green-600">✅ No issues found</p>
+    ) : (
+        <div className="space-y-2">
+            {validationIssues.map((issue) => (
+                <div
+                    key={issue.RuleId}
+                    className={`p-2 rounded text-sm ${
+                        issue.Severity === 'Error'
+                            ? 'bg-red-50 border border-red-200 text-red-800'
+                            : 'bg-yellow-50 border border-yellow-200 text-yellow-800'
+                    }`}
+                >
+                    {issue.Severity === 'Error' ? '❌' : '⚠️'} {issue.Message}
+                </div>
+            ))}
+        </div>
+    )}
+</div>
+```
+
+---
+
 ## 22. Generic Requirement: Region Containment Validation (WorldCard/WorldGuard Regions)
 
-### 16.1 Summary
+### 22.1 Summary
 
-For any entity that uses a WorldCard/WorldGuard region, the system must support **configurable containment validation**: a region for one entity must be fully contained within a specified “parent” region (belonging to another entity).
+For any entity that uses a WorldCard/WorldGuard region, the system must support **configurable containment validation**: a region for one entity must be fully contained within a specified "parent" region (belonging to another entity).
 
 This rule must be **configurable by administrators** (not hard-coded to Town/District only) and must apply to both **create** and **edit** flows when configured.
 
-### 16.2 Administrator-configurable rules
+### 22.2 Administrator-configurable rules
 
 **REG-01 — Configurable containment rule**
 - An administrator can configure, per entity type (and/or per workflow step), whether containment validation is required.
