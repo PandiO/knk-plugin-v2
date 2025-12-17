@@ -9,6 +9,11 @@ Source inputs:
 - spec/SPEC_TOWNS.md (Hybrid Create Flow)
 - spec/LOGIC_CANDIDATES_TOWNS.md
 
+## MVP Scope (Now)
+**READ-only**: Town/District/Street/Structure list/get/search via API client; Paper commands for display only.
+
+**Out of scope**: Create/Update/Delete, WorldTasks, WorldBinding (region+location), CreationStages, ownership/permissions.
+
 ---
 
 ## Decision Summary

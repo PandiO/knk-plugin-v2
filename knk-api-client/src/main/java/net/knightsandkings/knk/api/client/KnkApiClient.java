@@ -2,14 +2,17 @@ package net.knightsandkings.knk.api.client;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.impl.HealthApiImpl;
 import net.knightsandkings.knk.api.impl.TownsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.LocationsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.DistrictsQueryApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;
@@ -33,6 +36,7 @@ public class KnkApiClient {
     private final HealthApi healthApi;
     private final TownsQueryApi townsQueryApi;
     private final LocationsQueryApi locationsQueryApi;
+    private final DistrictsQueryApi districtsQueryApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -52,6 +56,7 @@ public class KnkApiClient {
         this.healthApi = new HealthApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.townsQueryApi = new TownsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.locationsQueryApi = new LocationsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.districtsQueryApi = new DistrictsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -61,7 +66,14 @@ public class KnkApiClient {
     public TownsQueryApi getTownsQueryApi() {
         return townsQueryApi;
     }
-    public LocationsQueryApi getLocationsQueryApi() { return locationsQueryApi; }
+    
+    public LocationsQueryApi getLocationsQueryApi() { 
+        return locationsQueryApi; 
+    }
+    
+    public DistrictsQueryApi getDistrictsQueryApi() {
+        return districtsQueryApi;
+    }
     
     /**
      * Shutdown the client and release resources.
@@ -151,7 +163,8 @@ public class KnkApiClient {
             OkHttpClient httpClient = httpClientBuilder.build();
             
             ObjectMapper objectMapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .registerModule(new JavaTimeModule());
             
             ExecutorService finalExecutor = executor;
             if (finalExecutor == null) {

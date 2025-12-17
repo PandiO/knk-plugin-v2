@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 import java.util.List;
 
-public record TownDto(
+public record DistrictDto(
         @JsonProperty("id") Integer id,
         @JsonProperty("name") String name,
         @JsonProperty("description") String description,
@@ -14,9 +14,10 @@ public record TownDto(
         @JsonProperty("wgRegionId") String wgRegionId,
         @JsonProperty("locationId") Integer locationId,
         @JsonProperty("location") LocationDto location,
+        @JsonProperty("townId") Integer townId,
         @JsonProperty("streetIds") List<Integer> streetIds,
-        @JsonProperty("streets") List<TownStreetDto> streets,
-        @JsonProperty("districtIds") List<Integer> districtIds,
-        @JsonProperty("districts") List<TownDistrictDto> districts
+        @JsonProperty("town") DistrictTownDto town,
+        @JsonProperty("streets") List<DistrictStreetDto> streets,
+        @JsonProperty("structures") List<DistrictStructureDto> structures
 ) {
 }

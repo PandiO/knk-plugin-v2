@@ -9,6 +9,11 @@ Inputs:
 
 No assumptions or invented fields. All items are either in legacy sources or swagger. Otherwise marked TBD/NOT IN CONTRACT.
 
+## MVP Scope (Now)
+**READ-only**: GET list, GET by id, POST search for Town/District/Street/Structure via API client + Paper display commands.
+
+**Out of scope**: Create/Update/Delete flows, WorldTasks/WorldBinding (region+location), interactive CreationStages, ownership/permissions.
+
 ---
 
 ## 1) Data Mapping (Per Entity)

@@ -10,6 +10,7 @@ import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -18,6 +19,7 @@ public class KnKPlugin extends JavaPlugin {
     private KnkConfig config;
     private TownsQueryApi townsQueryApi;
     private LocationsQueryApi locationsQueryApi;
+    private DistrictsQueryApi districtsQueryApi;
     
     @Override
     public void onEnable() {
@@ -50,8 +52,10 @@ public class KnKPlugin extends JavaPlugin {
             // Wire TownsQueryApi from client
             this.townsQueryApi = apiClient.getTownsQueryApi();
             this.locationsQueryApi = apiClient.getLocationsQueryApi();
+            this.districtsQueryApi = apiClient.getDistrictsQueryApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
+            getLogger().info("DistrictsQueryApi wired from API client");
 
             // Register commands
             registerCommands();
@@ -80,7 +84,7 @@ public class KnKPlugin extends JavaPlugin {
     private void registerCommands() {
         PluginCommand knkCommand = getCommand("knk");
         if (knkCommand != null) {
-            knkCommand.setExecutor(new KnkAdminCommand(this, apiClient.getHealthApi(), townsQueryApi, locationsQueryApi));
+            knkCommand.setExecutor(new KnkAdminCommand(this, apiClient.getHealthApi(), townsQueryApi, locationsQueryApi, districtsQueryApi));
             getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");

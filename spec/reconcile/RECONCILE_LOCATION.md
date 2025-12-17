@@ -4,6 +4,11 @@ Bronnen:
 - knk/spec/SOURCES_LOCATION.md
 - spec/api/API_CONTRACT_LOCATION.md (met spec/api/swagger.json)
 
+## MVP Scope (Now)
+**READ-only**: GET location via embedded DTOs in Town/District/Structure; no direct Location endpoints in scope.
+
+**Out of scope**: POST/PUT/DELETE /api/Locations, world→Location binding, Bukkit Location construction in-game.
+
 ## Confirmed Mapping
 
 - API `LocationDto` ↔ Plugin (legacy) `Location` ↔ Bukkit `org.bukkit.Location`

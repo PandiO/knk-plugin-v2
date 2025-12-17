@@ -10,6 +10,9 @@ import net.knightsandkings.knk.core.domain.common.Page;
 import net.knightsandkings.knk.core.domain.towns.TownDetail;
 import net.knightsandkings.knk.core.domain.towns.TownSummary;
 
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -48,7 +51,7 @@ public class TownsMapper {
             dto.id(),
             dto.name(),
             dto.description(),
-            dto.createdAt(),
+            toOffsetUtc(dto.createdAt()),
             dto.allowEntry(),
             dto.allowExit(),
             dto.wgRegionId(),
@@ -59,6 +62,14 @@ public class TownsMapper {
             dto.districtIds(),
             mapDistricts(dto.districts())
         );
+    }
+
+    /**
+     * Converts API LocalDateTime (no zone) to OffsetDateTime using UTC.
+     * TODO: Confirm timezone semantics with API contract; adjust if needed.
+     */
+    private static OffsetDateTime toOffsetUtc(LocalDateTime dt) {
+        return dt == null ? null : dt.atOffset(ZoneOffset.UTC);
     }
     
     private static TownDetail.Location mapLocation(LocationDto dto) {

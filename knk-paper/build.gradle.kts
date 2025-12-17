@@ -1,7 +1,7 @@
 val devServerDirPath = (findProperty("devServerDirectory") as String?) ?: "../../DEV_SERVER_1.21.10"
 
 plugins {
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.gradleup.shadow") version "8.3.5"
 }
 
 dependencies {
@@ -27,6 +27,11 @@ val devPluginsDir = rootProject.layout.projectDirectory
 tasks {
     shadowJar {
         archiveClassifier.set("")
+        
+        // Relocate dependencies to avoid conflicts with Paper's bundled libraries
+        relocate("com.fasterxml.jackson", "net.knightsandkings.knk.libs.jackson")
+        relocate("okhttp3", "net.knightsandkings.knk.libs.okhttp3")
+        relocate("okio", "net.knightsandkings.knk.libs.okio")
     }
 
     register<Copy>("deployToDevServer") {

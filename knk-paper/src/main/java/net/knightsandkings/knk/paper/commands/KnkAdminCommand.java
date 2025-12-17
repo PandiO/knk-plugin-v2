@@ -3,6 +3,7 @@ package net.knightsandkings.knk.paper.commands;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -20,7 +21,7 @@ public class KnkAdminCommand implements CommandExecutor {
     private final CommandRegistry registry = new CommandRegistry();
     private final HelpSubcommand helpSubcommand;
 
-    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi) {
+    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi, DistrictsQueryApi districtsApi) {
         this.helpSubcommand = new HelpSubcommand(registry);
         
         // Register health
@@ -47,6 +48,26 @@ public class KnkAdminCommand implements CommandExecutor {
                     adjusted[0] = "town";
                     System.arraycopy(args, 0, adjusted, 1, args.length);
                     return townsCommand.onCommand(sender, null, "knk", adjusted);
+                }
+        );
+        
+        // Register districts
+        DistrictsDebugCommand districtsCommand = new DistrictsDebugCommand(plugin, districtsApi);
+        registry.register(
+                new CommandMetadata("districts", "List or search districts", "/knk districts list [page] [size]", "knk.admin",
+                        List.of("/knk districts list", "/knk districts list 1 10")),
+                (sender, args) -> districtsCommand.onCommand(sender, null, "knk", args)
+        );
+        
+        // Register district (alias for get by ID)
+        registry.register(
+                new CommandMetadata("district", "Get district details by ID", "/knk district <id>", "knk.admin",
+                        List.of("/knk district 1")),
+                (sender, args) -> {
+                    String[] adjusted = new String[args.length + 1];
+                    adjusted[0] = "district";
+                    System.arraycopy(args, 0, adjusted, 1, args.length);
+                    return districtsCommand.onCommand(sender, null, "knk", adjusted);
                 }
         );
         
