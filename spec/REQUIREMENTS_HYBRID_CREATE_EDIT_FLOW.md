@@ -303,30 +303,521 @@ The system must support mapping a Web App admin to an in-game identity to allow 
 
 ---
 
-## 14. Open Questions (to refine next)
+---
 
-1. Exact task claim model: automatic polling vs explicit claim by admin?
-2. Link code format/lifetime and how admin identity is verified in-game.
-3. Exact WorldGuard integration strategy: region name vs UUID vs custom id.
-4. Location schema: store full coordinates vs reference entity only?
-5. How edits differ from creates: do edits require staging or immediate application?
-6. Do we support multiple Minecraft servers/worlds simultaneously? How is target world selected?
-7. Desired UX for region selection: cuboid vs polygon vs custom shapes support.
+## 14. FormConfig Architecture Snapshot
+
+### Current Implementation (as discovered in codebase)
+
+**Core Components:**
+
+1. **Entity Metadata System** ([Repository/knk-web-api-v2/Attributes](Repository/knk-web-api-v2/Attributes))
+   - `[FormConfigurableEntity(string entityName)]` - marks entities as form-capable
+   - `[RelatedEntityField(Type relatedType)]` - marks navigation/FK properties
+   - `[NavigationPair(string navigationPropertyName)]` - pairs FK int with navigation object
+   - These attributes drive reflection-based form generation
+
+2. **Generic UI Components** ([Repository/knk-web-app/src/components](Repository/knk-web-app/src/components))
+   - `GenericEntityForm` - renders create/edit forms from metadata
+   - `GenericEntityList` - renders entity tables
+   - `GenericEntityDetail` - renders detail views
+   - Uses type introspection + API-provided schema to build UI
+
+3. **API Contract Pattern**
+   - DTOs: `{Entity}ReadDto`, `{Entity}CreateDto`, `{Entity}UpdateDto`
+   - Navigation DTOs: `{RelatedEntity}NavDto` (prevents circular refs)
+   - Controllers: standard CRUD endpoints with consistent routing
+   - AutoMapper profiles for all mappings
+
+4. **Current Limitations (for hybrid workflows):**
+   - ❌ No explicit "Step" or "Wizard" entity/model
+   - ❌ No workflow state tracking (Draft/Pending/Active)
+   - ❌ No task/world-bound step concept
+   - ❌ No field-level "requires Minecraft" metadata
+   - ❌ No progress persistence across multi-step flows
+
+**Extension Points:**
+
+- **New Attributes**: Can add `[WorldBoundField]`, `[RequiresMinecraftTask]`, `[WorkflowStep(int order)]`
+- **New DTOs**: `WorkflowSessionDto`, `WorldTaskDto`, `StepProgressDto`
+- **New Entities**: `WorkflowSession`, `WorldTask`, `StepDefinition`, `TaskResult`
+- **UI Components**: `WizardStepContainer`, `WorldBoundFieldRenderer`, `TaskStatusMonitor`
 
 ---
 
-## 15. Definition of Done (per entity enablement)
+## 15. Hybrid Flow → FormConfig Mapping
 
-For each entity (Town, District, Street, Structure, …), the feature is “Done” when:
-- Spec + reconcile are complete and consistent with swagger contracts.
-- Web App has wizard steps and can complete a full create with required world-bound steps.
-- Web API supports draft/workflow/task/finalize for that entity.
-- Plugin supports task execution and returns correct outputs.
-- End-to-end test on dev server succeeds and is documented.
+| Hybrid Flow Concept | FormConfig Implementation | Notes |
+|---------------------|---------------------------|-------|
+| **Hybrid Workflow Session** | New: `WorkflowSession` entity + `WorkflowSessionDto` | Tracks multi-step create/edit; references target entity (polymorphic or by entity type name) |
+| **Workflow Steps** | New: `StepDefinition` entity (or JSON config in `WorkflowSession`) | Order, name, field list, validation rules, completion criteria |
+| **Web-only Step** | Uses existing `GenericEntityForm` with subset of fields | No Minecraft dependency; standard validation |
+| **World-bound Step** | New field attribute: `[WorldBoundField(TaskType)]` + `WorldTask` entity | Field renders with "Start Task" button; polls task status; binds result to entity field |
+| **Step Status (Pending/InProgress/Completed/Failed)** | `StepProgress` tracked in `WorkflowSession.StepsJson` or separate `StepProgress` entity | Persisted per step; drives UI "continue/retry" logic |
+| **World Task** | New: `WorldTask` entity (Id, WorkflowSessionId, StepId, FieldName, Status, Input, Output, Error) | Created by API when step requires Minecraft; claimed/completed by plugin |
+| **Choose existing vs create new (WA-03)** | Field metadata extension: `allowExisting: bool, allowCreate: bool` | UI renders dropdown (existing) + "Create New" button (starts task) |
+| **Link Code / Claim** | `WorldTask.LinkCode` (short-lived GUID or 6-digit code) + claim endpoint | Web app shows code; plugin `/knk task claim <code>` or auto-poll by server ID |
+| **Task Output → Entity Field** | `WorldTask.OutputJson` → deserialized and mapped to target field (e.g., `WgRegionId`, `LocationId`) | AutoMapper or manual mapping in finalize logic |
+| **Audit/Diagnostics (WA-05)** | New UI component: `WorkflowStatusPanel` (lists tasks, shows history, errors) | Queries `WorkflowSession` + `WorldTask[]` via API |
+| **Finalization** | `POST /api/workflows/{id}/finalize` → validates all steps complete → creates/updates entity → sets state Active | Idempotent; returns final entity DTO |
 
 ---
 
-## 16. Generic Requirement: Region Containment Validation (WorldCard/WorldGuard Regions)
+## 16. Town v1 FormConfig Template (Steps/Fields/Metadata)
+
+### Step 1: General Information (Web-only)
+
+**Fields:**
+```csharp
+[WorkflowStep(order: 1, name: "General Information")]
+public class TownCreateDto_Step1
+{
+    [Required, MaxLength(100)]
+    public string Name { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string Description { get; set; } = string.Empty;
+
+    [RelatedEntityField(typeof(User))]
+    public int? OwnerUserId { get; set; } // nullable until assigned
+}
+```
+
+**Validation:**
+- Name: unique across Towns (API validates)
+- OwnerUserId: must exist (FK validation)
+
+**Definition of Done:** Fields pass validation; saved as Draft Town entity.
+
+---
+
+### Step 2: Town Rules (Web-only)
+
+**Fields:**
+```csharp
+[WorkflowStep(order: 2, name: "Town Rules")]
+public class TownCreateDto_Step2
+{
+    public bool AllowEntry { get; set; } = true;
+    public bool AllowExit { get; set; } = true;
+    public bool PvpEnabled { get; set; } = false;
+    public bool MobSpawningEnabled { get; set; } = false;
+    // ...additional flags from Town entity
+}
+```
+
+**Validation:** None (defaults acceptable).
+
+**Definition of Done:** Values persisted to Draft Town.
+
+---
+
+### Step 3: World Data (World-bound)
+
+**Fields:**
+```csharp
+[WorkflowStep(order: 3, name: "World Data", requiresMinecraft: true)]
+public class TownCreateDto_Step3
+{
+    [WorldBoundField(TaskType = "CaptureLocation", fieldLabel: "Spawn Location")]
+    public int? SpawnLocationId { get; set; }
+
+    [WorldBoundField(TaskType = "DefineRegion", fieldLabel: "Town Region (WorldGuard/WorldCard)")]
+    public string? WgRegionId { get; set; } // or int if we store WG regions in DB
+}
+```
+
+**Metadata per field:**
+
+| Field | Task Type | Input (to plugin) | Output (from plugin) | Validation (plugin-side) |
+|-------|-----------|-------------------|---------------------|--------------------------|
+| `SpawnLocationId` | `CaptureLocation` | `{ requiredWorld: "world", locationType: "spawn" }` | `{ locationId: 123, world: "world", x, y, z, yaw, pitch }` | Location must be within Town region (if region defined first) OR defer to post-finalize check |
+| `WgRegionId` | `DefineRegion` | `{ regionType: "cuboid", allowExisting: true, allowCreate: true, parentRegionId: null }` | `{ wgRegionId: "town_example_123", bounds: {...} }` | Must be valid cuboid/polygon; if parentRegion configured (see REG-01..06), must be fully contained |
+
+**UI Flow:**
+1. For each world-bound field:
+   - If `allowExisting`: show dropdown of existing regions/locations from API
+   - If `allowCreate`: show "Create in Minecraft" button
+2. On "Create in Minecraft":
+   - API creates `WorldTask` with `LinkCode`
+   - Web app shows: "Go to Minecraft, use `/knk task claim <code>` or server auto-claims"
+   - Polls `GET /api/worldtasks/{id}` for status
+   - On `Completed`: maps `OutputJson` → field value; shows checkmark
+   - On `Failed`: shows error; allows retry
+
+**Definition of Done:** Both fields populated (either from existing or task completion); all validations pass.
+
+---
+
+### Workflow Finalization
+
+**Endpoint:** `POST /api/workflows/{workflowSessionId}/finalize`
+
+**Logic:**
+1. Validate all steps complete (StepProgress.Status == Completed for all)
+2. Validate all world tasks complete (no Pending/InProgress/Failed tasks)
+3. Create final `Town` entity from Draft + task outputs
+4. Set `Town.State = Active`
+5. Delete or archive `WorkflowSession` and `WorldTask` records (or mark completed)
+6. Return `TownReadDto`
+
+**Idempotency:** If already finalized, return existing Town (409 Conflict or 200 OK with existing data).
+
+---
+
+## 17. API Contract (Wizard/Tasks) + DTO Shapes
+
+### Workflow Endpoints
+
+```csharp
+// Start create workflow
+POST /api/workflows/town/create
+Body: TownCreateDto_Step1
+Response: WorkflowSessionDto { id, entityType, entityId (draft), currentStep, steps[], tasks[] }
+
+// Update step
+PUT /api/workflows/{workflowSessionId}/steps/{stepNumber}
+Body: TownCreateDto_Step2 (or Step3, etc.)
+Response: WorkflowSessionDto (updated)
+
+// Finalize
+POST /api/workflows/{workflowSessionId}/finalize
+Response: TownReadDto (final entity)
+
+// Get status
+GET /api/workflows/{workflowSessionId}
+Response: WorkflowSessionDto
+```
+
+### World Task Endpoints
+
+```csharp
+// Create task (usually called by workflow step update)
+POST /api/worldtasks
+Body: CreateWorldTaskDto { workflowSessionId, stepId, fieldName, taskType, inputJson }
+Response: WorldTaskDto { id, linkCode, status, ... }
+
+// List tasks (for plugin polling or web app diagnostics)
+GET /api/worldtasks?status=Pending&serverId={serverId}
+Response: WorldTaskDto[]
+
+// Claim task
+POST /api/worldtasks/{id}/claim
+Body: ClaimTaskDto { serverId?, minecraftUsername? }
+Response: WorldTaskDto (status → InProgress, claimedAt, claimedBy)
+
+// Complete task
+POST /api/worldtasks/{id}/complete
+Body: CompleteTaskDto { outputJson }
+Response: WorldTaskDto (status → Completed, output mapped)
+
+// Fail task
+POST /api/worldtasks/{id}/fail
+Body: FailTaskDto { errorMessage }
+Response: WorldTaskDto (status → Failed, retryable)
+
+// Get task status (polling)
+GET /api/worldtasks/{id}
+Response: WorldTaskDto
+```
+
+### DTO Shapes
+
+```csharp
+public class WorkflowSessionDto
+{
+    public int Id { get; set; }
+    public string EntityType { get; set; } = string.Empty; // "Town"
+    public int? EntityId { get; set; } // Draft entity ID
+    public string State { get; set; } = string.Empty; // "Draft", "Active", "Cancelled"
+    public int CurrentStep { get; set; }
+    public List<StepProgressDto> Steps { get; set; } = new();
+    public List<WorldTaskDto> Tasks { get; set; } = new();
+    public DateTime CreatedAt { get; set; }
+    public int CreatedByUserId { get; set; }
+}
+
+public class StepProgressDto
+{
+    public int StepNumber { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool RequiresMinecraft { get; set; }
+    public string Status { get; set; } = string.Empty; // "Pending", "InProgress", "Completed"
+    public DateTime? CompletedAt { get; set; }
+}
+
+public class WorldTaskDto
+{
+    public int Id { get; set; }
+    public int WorkflowSessionId { get; set; }
+    public int StepNumber { get; set; }
+    public string FieldName { get; set; } = string.Empty;
+    public string TaskType { get; set; } = string.Empty; // "CaptureLocation", "DefineRegion"
+    public string Status { get; set; } = string.Empty; // "Pending", "InProgress", "Completed", "Failed"
+    public string? LinkCode { get; set; }
+    public string InputJson { get; set; } = "{}";
+    public string? OutputJson { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? ClaimedByServerId { get; set; }
+    public string? ClaimedByMinecraftUsername { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ClaimedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+public class CreateWorldTaskDto
+{
+    public int WorkflowSessionId { get; set; }
+    public int StepNumber { get; set; }
+    public string FieldName { get; set; } = string.Empty;
+    public string TaskType { get; set; } = string.Empty;
+    public string InputJson { get; set; } = "{}";
+}
+
+public class ClaimTaskDto
+{
+    public string? ServerId { get; set; }
+    public string? MinecraftUsername { get; set; }
+}
+
+public class CompleteTaskDto
+{
+    public string OutputJson { get; set; } = "{}";
+}
+
+public class FailTaskDto
+{
+    public string ErrorMessage { get; set; } = string.Empty;
+}
+```
+
+### Concurrency Control (API-07)
+
+**Strategy:** Optimistic concurrency using `RowVersion` on `WorkflowSession` entity.
+
+- Each update endpoint accepts `If-Match: {etag}` header or `rowVersion` in body
+- API returns `409 Conflict` if version mismatch
+- Web app refetches and prompts admin to retry
+
+**Alternative (simpler v1):** Single active workflow per entity type + user; API rejects if duplicate create started.
+
+### Audit Trail (API-08)
+
+**Logged Events:**
+- Workflow created (who, when, entity type)
+- Step completed (step number, when)
+- Task created/claimed/completed/failed (who, when, output/error)
+- Finalization (when, resulting entity ID)
+
+**Storage:** `AuditLog` entity or structured logs (JSON) queryable via diagnostics endpoint.
+
+---
+
+## 18. Plugin Task Handlers + Commands
+
+### Task Handler Architecture
+
+**Pattern:** Each `TaskType` has a handler class implementing `IWorldTaskHandler`:
+
+```java
+public interface IWorldTaskHandler {
+    String getTaskType();
+    CompletableFuture<TaskResult> execute(WorldTaskDto task, Player admin);
+}
+```
+
+**Implementations:**
+
+1. **CaptureLocationHandler**
+   - Prompts admin to stand at desired location
+   - Captures world + x/y/z + yaw/pitch
+   - Returns `{ locationId: ... }` (after API persist or inline)
+
+2. **DefineRegionHandler**
+   - If `allowExisting`: list regions via API + prompt selection
+   - If `allowCreate`: guide WorldEdit selection → create WG region → validate containment (if configured) → return `{ wgRegionId: ... }`
+
+3. **ValidateRegionContainmentHandler** (generic, reusable for REG-01..06)
+   - Input: `{ childRegionId, parentRegionId }`
+   - Checks WG API: child fully within parent
+   - Returns success or error with detailed message
+
+### Commands
+
+```
+/knk tasks list [status]
+  - Lists tasks claimable by current player or server
+  - Shows: ID, Type, Entity, Status, Link Code
+
+/knk task claim <id|linkCode>
+  - Claims task (calls POST /api/worldtasks/{id}/claim)
+  - Starts guided flow (handler.execute())
+
+/knk task status <id>
+  - Shows current task status from API
+
+/knk task cancel <id>
+  - Fails task with "Cancelled by admin" message
+  - (Optional) Allows retry from Web App
+
+/knk health
+  - (Already exists) Shows API connectivity
+```
+
+### Async Networking (PL-05)
+
+**Pattern:**
+```java
+CompletableFuture.supplyAsync(() -> apiClient.claimTask(taskId), executorService)
+    .thenApplyAsync(task -> {
+        // Perform world changes on main thread
+        return Bukkit.getScheduler().callSyncMethod(plugin, () -> {
+            handler.execute(task, player);
+        }).get();
+    }, executorService)
+    .thenAcceptAsync(result -> {
+        apiClient.completeTask(taskId, result);
+    }, executorService)
+    .exceptionally(ex -> {
+        apiClient.failTask(taskId, ex.getMessage());
+        return null;
+    });
+```
+
+**Key Points:**
+- API calls on async executor
+- World/Bukkit calls on main thread via `callSyncMethod`
+- No blocking waits on main thread
+
+### Containment Validation (REG-01..06)
+
+**Configuration (API-side):**
+
+```csharp
+public class RegionContainmentRule
+{
+    public int Id { get; set; }
+    public string EntityType { get; set; } = string.Empty; // "District", "Street", etc.
+    public string ChildRegionFieldName { get; set; } = "WgRegionId";
+    public string ParentEntityNavigationPath { get; set; } = "Town.WgRegionId"; // e.g., "District.Town.WgRegionId"
+    public bool IsRequired { get; set; } = true;
+}
+```
+
+**Runtime (Plugin):**
+- Before completing `DefineRegion` task, query `/api/regioncontainmentrules?entityType={entityType}`
+- For each rule:
+  - Fetch parent region ID from API (via workflow context or explicit query)
+  - Validate child region bounds fully within parent (WG API)
+  - If fails: return error, block completion
+
+**Error Message:**
+> "The selected region extends outside the required parent region '{parentName}'. Please adjust your selection to fit within the bounds."
+
+---
+
+## 19. Open Questions (Resolved with Defaults)
+
+1. **Location storage strategy:**
+   - **Default for v1:** Option A (normalized `Location` entity with Id, World, X, Y, Z, Yaw, Pitch + `Town.SpawnLocationId FK`)
+   - Rationale: reusable, queryable, follows existing FK patterns
+
+2. **WorldGuard region reference:**
+   - **Default for v1:** Option A (store region name as string; `WgRegionId` = region name)
+   - Rationale: simpler; WorldGuard is source of truth; no sync issues
+
+3. **Link code lifetime:**
+   - **Default:** 15 minutes; single-use; expires on claim or timeout
+   - Rationale: balances security with UX (admin has time to switch contexts)
+
+4. **Multiple Minecraft servers:**
+   - **v1 assumption:** Single dev server; `ServerId` optional (defaults to "primary")
+   - **v2 scope:** Multi-server task routing (admin selects target world/server in Web App)
+
+5. **Edit workflow vs create:**
+   - **v1:** Edit uses same `WorkflowSession` pattern; creates tasks for changed world-bound fields only
+   - Immediate apply on finalize (no staging/approval unless explicitly added later)
+
+6. **Wizard UI: custom vs generic form:**
+   - **Default:** Extend `GenericEntityForm` with `WizardStepContainer` wrapper; reuse field rendering
+   - If generic proves insufficient, create Town-specific wizard component
+
+7. **Task polling interval (Web App):**
+   - **Default:** Poll every 3 seconds while task status is `InProgress`; stop on `Completed`/`Failed`
+
+8. **Concurrent workflows:**
+   - **v1 rule:** One active create workflow per entity type per user (DB unique constraint)
+   - **Edit:** One active edit workflow per entity instance (lock at entity level)
+
+9. **Task claim model:**
+   - **v1:** Manual claim via `/knk task claim <code>` (link code displayed in Web App)
+   - **v2 (optional):** Auto-claim by server polling if configured
+
+10. **Region selection UX:**
+    - **v1:** Cuboid only (WorldEdit selection → WG region creation)
+    - **v2:** Polygon support (if WG/WorldCard supports and plugin implements)
+
+---
+
+## 20. What to Implement Next (Ordered Checklist)
+
+### Backend (API)
+
+1. **Create entities:** `WorkflowSession`, `StepProgress`, `WorldTask`, `RegionContainmentRule`, `Location`
+2. **Create DTOs:** `WorkflowSessionDto`, `StepProgressDto`, `WorldTaskDto`, `CreateWorldTaskDto`, `ClaimTaskDto`, `CompleteTaskDto`, `FailTaskDto`
+3. **Implement repositories + interfaces:** `IWorkflowSessionRepository`, `IWorldTaskRepository`, `ILocationRepository`
+4. **Implement services + interfaces:** `IWorkflowService` (create/update/finalize), `IWorldTaskService` (create/claim/complete/fail)
+5. **Create AutoMapper profiles** for all new DTOs ↔ entities
+6. **Implement controllers:** `WorkflowsController`, `WorldTasksController` with full CRUD + finalize/claim/complete endpoints
+7. **Add validation:** workflow step completion checks, task idempotency, concurrency control (RowVersion or lock)
+8. **Seed `RegionContainmentRule`** for Town/District example (District.WgRegionId must be within District.Town.WgRegionId)
+9. **Add audit logging** for workflow events (create/step/task/finalize)
+10. **Update Swagger/OpenAPI** and test all endpoints via Swagger UI
+
+### Web App
+
+1. **Generate TypeScript types** from updated Swagger (DTOs for workflow/tasks)
+2. **Create API client methods** in existing API service (workflow CRUD, task status polling)
+3. **Create `WizardStepContainer` component** (wraps `GenericEntityForm`; adds step navigation, progress indicator)
+4. **Create `WorldBoundFieldRenderer` component** (shows "Choose existing" dropdown + "Create in Minecraft" button; polls task status; displays output)
+5. **Create `WorkflowStatusPanel` component** (diagnostics: shows steps, tasks, errors)
+6. **Implement Town Create Wizard** using `WizardStepContainer` + 3 steps (General, Rules, World Data)
+7. **Add task status polling hook** (`useTaskStatus(taskId)` → polls every 3s until complete)
+8. **Add link code display + copy button** (when task created)
+9. **Add error handling + retry logic** (failed task → show error + "Retry" button)
+10. **Test end-to-end** Town create flow (Web App → API → manual task completion via API test → finalize)
+
+### Plugin
+
+1. **Create DTO classes** matching API contract (`WorldTaskDto`, `ClaimTaskDto`, `CompleteTaskDto`, etc.)
+2. **Implement `ApiClient` methods:** `listTasks()`, `claimTask(id)`, `completeTask(id, output)`, `failTask(id, error)`
+3. **Create `IWorldTaskHandler` interface + handler registry**
+4. **Implement `CaptureLocationHandler`** (prompt player, capture coords, persist Location via API, return locationId)
+5. **Implement `DefineRegionHandler`** (guide WorldEdit selection, create WG region, validate containment if configured, return regionId)
+6. **Implement `/knk tasks list` command** (queries API, displays tasks)
+7. **Implement `/knk task claim <code>` command** (claims task, starts handler flow)
+8. **Implement `/knk task status <id>` command** (queries API, shows status)
+9. **Add async executor pattern** for all API calls (no main thread blocking)
+10. **Test end-to-end:** claim task in-game → complete DefineRegion → verify API receives output → finalize in Web App
+
+---
+
+For each entity (Town, District, Street, Structure, …), the feature is "Done" when:
+
+- [ ] Backend: All entities/DTOs/services/controllers implemented and tested
+- [ ] Backend: Swagger contract includes all workflow/task endpoints
+- [ ] Web App: Entity Create Wizard functional with all required steps
+- [ ] Web App: World-bound fields show task status + link code
+- [ ] Plugin: Can claim and complete all required task types (`CaptureLocation`, `DefineRegion`, etc.)
+- [ ] Plugin: Containment validation blocks invalid region definitions (if configured)
+- [ ] End-to-end test: Admin creates entity via Web App → completes world tasks in Minecraft → finalizes → entity is Active
+- [ ] Audit trail visible in diagnostics panel (all steps/tasks logged)
+- [ ] No blocking I/O on Minecraft main thread (verified via profiler or logs)
+- [ ] Documentation: Updated with workflow usage guide for admins
+
+---
+
+## 22. Generic Requirement: Region Containment Validation (WorldCard/WorldGuard Regions)
 
 ### 16.1 Summary
 
