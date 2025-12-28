@@ -85,7 +85,7 @@ class TownsMapperTest {
             1,
             "MyTown",
             "A nice town",
-            OffsetDateTime.parse("2024-12-14T10:00:00Z"),
+            OffsetDateTime.parse("2024-12-14T10:00:00Z").toLocalDateTime(),
             true,
             false,
             "wg-region-1",

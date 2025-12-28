@@ -4,7 +4,7 @@ api:
   base-url: "http://localhost:5294/api"
   
   # Enable debug logging (logs request URLs and latency)
-  debug-logging: false
+  debug-logging: true
   
   # Allow untrusted SSL certificates (ONLY for development with self-signed certs)
   allow-untrusted-ssl: true

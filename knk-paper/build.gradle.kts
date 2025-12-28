@@ -4,11 +4,20 @@ plugins {
     id("com.gradleup.shadow") version "8.3.5"
 }
 
+repositories {
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
+    // EngineHub repo voor WorldGuard/WorldEdit
+    maven("https://maven.enginehub.org/repo/")
+}
+
 dependencies {
     implementation(project(":knk-core"))
     implementation(project(":knk-api-client"))
 
     compileOnly("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
+    compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.2.13")
+    compileOnly("com.sk89q.worldguard:worldguard-bukkit:7.0.10")
     
     testImplementation("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")

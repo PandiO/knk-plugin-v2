@@ -10,11 +10,15 @@ import net.knightsandkings.knk.api.impl.TownsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.LocationsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.DistrictsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.StreetsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.StructuresQueryApiImpl;
+import net.knightsandkings.knk.api.impl.DomainsQueryApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
+import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;
@@ -40,6 +44,8 @@ public class KnkApiClient {
     private final LocationsQueryApi locationsQueryApi;
     private final DistrictsQueryApi districtsQueryApi;
     private final StreetsQueryApi streetsQueryApi;
+    private final StructuresQueryApi structuresQueryApi;
+    private final DomainsQueryApi domainsQueryApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -61,6 +67,8 @@ public class KnkApiClient {
         this.locationsQueryApi = new LocationsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.districtsQueryApi = new DistrictsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.streetsQueryApi = new StreetsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.structuresQueryApi = new StructuresQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.domainsQueryApi = new DomainsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -81,6 +89,14 @@ public class KnkApiClient {
 
     public StreetsQueryApi getStreetsQueryApi() {
         return streetsQueryApi;
+    }
+
+    public StructuresQueryApi getStructuresQueryApi() {
+        return structuresQueryApi;
+    }
+
+    public DomainsQueryApi getDomainsQueryApi() {
+        return domainsQueryApi;
     }
     
     /**

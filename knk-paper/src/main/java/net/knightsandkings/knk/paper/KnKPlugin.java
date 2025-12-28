@@ -12,8 +12,22 @@ import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
+import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
+import net.knightsandkings.knk.core.regions.RegionTransitionService;
+import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
+import net.knightsandkings.knk.paper.listeners.PlayerListener;
+import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
+import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
+import net.knightsandkings.knk.core.regions.RegionDomainResolver;
+import net.knightsandkings.knk.core.ports.gates.GateControlPort;
+import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.logging.Logger;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
@@ -22,6 +36,9 @@ public class KnKPlugin extends JavaPlugin {
     private LocationsQueryApi locationsQueryApi;
     private DistrictsQueryApi districtsQueryApi;
     private StreetsQueryApi streetsQueryApi;
+    private StructuresQueryApi structuresQueryApi;
+    private DomainsQueryApi domainsQueryApi;
+    private ExecutorService regionLookupExecutor;
     
     @Override
     public void onEnable() {
@@ -56,14 +73,55 @@ public class KnKPlugin extends JavaPlugin {
             this.locationsQueryApi = apiClient.getLocationsQueryApi();
             this.districtsQueryApi = apiClient.getDistrictsQueryApi();
             this.streetsQueryApi = apiClient.getStreetsQueryApi();
+            this.structuresQueryApi = apiClient.getStructuresQueryApi();
+            this.domainsQueryApi = apiClient.getDomainsQueryApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
             getLogger().info("DistrictsQueryApi wired from API client");
             getLogger().info("StreetsQueryApi wired from API client");
+            getLogger().info("StructuresQueryApi wired from API client");
+            getLogger().info("DomainsQueryApi wired from API client");
 
             // Register commands
             registerCommands();
+
+            // Register region listeners (WorldGuard)
+            // Create domain resolver for mapping WG region IDs to domain entities
+            RegionDomainResolver regionDomainResolver = new RegionDomainResolver(
+                townsQueryApi,
+                districtsQueryApi,
+                structuresQueryApi,
+                domainsQueryApi
+            );
+
+            // Dedicated executor for region lookup (API prefetch); daemon threads to avoid blocking shutdown.
+            regionLookupExecutor = Executors.newFixedThreadPool(
+                Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+                r -> {
+                    Thread t = new Thread(r, "knk-region-lookup");
+                    t.setDaemon(true);
+                    return t;
+                }
+            );
             
+            // Create gate control adapter for handling gate open/close
+            GateControlPort gateControlPort = new PaperGateControlAdapter(this);
+            
+            // Create region transition service with both resolver and gate control
+            RegionTransitionService regionTransitionService = new SimpleRegionTransitionService(regionDomainResolver, gateControlPort);
+            
+            // Wire tracker and listener
+            WorldGuardRegionTracker regionTracker = new WorldGuardRegionTracker(
+                regionTransitionService,
+                regionDomainResolver,
+                regionLookupExecutor,
+                Logger.getLogger(WorldGuardRegionTracker.class.getName()),
+                true  // Enable console logging; set to false to disable
+            );
+            registerEvents(regionTracker);
+            
+            getLogger().info("Region transition service initialized with domain resolver and gate control");
+
             getLogger().info("KnightsAndKings Plugin Enabled!");
             
         } catch (Exception e) {
@@ -80,7 +138,18 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("Shutting down API client...");
             apiClient.shutdown();
         }
+        if (regionLookupExecutor != null) {
+            regionLookupExecutor.shutdownNow();
+        }
         getLogger().info("KnightsAndKings Plugin Disabled!");
+    }
+
+    private void registerEvents(WorldGuardRegionTracker regionTracker) {
+        var pluginManager = getServer().getPluginManager();
+        // Event registration moved to onEnable after region transition service setup
+
+        pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
+        pluginManager.registerEvents(new PlayerListener(), this);
     }
     
     // No extra helpers needed; API client constructs and owns HTTP internals.

@@ -1,0 +1,467 @@
+package net.knightsandkings.knk.core.regions;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
+import net.knightsandkings.knk.core.domain.domains.DomainRegionQuery;
+import net.knightsandkings.knk.core.domain.domains.DomainRegionSummary;
+import net.knightsandkings.knk.core.domain.structures.StructureDetail;
+import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
+import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
+import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+
+/**
+ * Resolves WorldGuard region IDs to Knights & Kings domain entities (Town, District, Structure, etc.).
+ * Acts as a mapping service between WG region names and core domain models.
+ *
+ * Supports optional API-backed lookup using search endpoints with lightweight caching by wgRegionId.
+ */
+public class RegionDomainResolver {
+    private static final Logger LOGGER = Logger.getLogger(RegionDomainResolver.class.getName());
+    private static final Duration DEFAULT_CACHE_TTL = Duration.ofMinutes(1);
+
+    private final TownsQueryApi townsQueryApi;
+    private final DistrictsQueryApi districtsQueryApi;
+    private final StructuresQueryApi structuresQueryApi;
+    private final DomainsQueryApi domainsQueryApi;
+    private final Duration cacheTtl;
+
+    private final Map<String, CachedValue<DomainSnapshot>> domainsByRegionId = new ConcurrentHashMap<>();
+
+    /**
+     * In-memory only (no API) constructor.
+     */
+    public RegionDomainResolver() {
+        this(null, null, null, null, DEFAULT_CACHE_TTL);
+    }
+
+    /**
+     * API-enabled constructor using default cache TTL.
+     */
+    public RegionDomainResolver(
+        TownsQueryApi townsQueryApi,
+        DistrictsQueryApi districtsQueryApi,
+        StructuresQueryApi structuresQueryApi,
+        DomainsQueryApi domainsQueryApi
+    ) {
+        this(townsQueryApi, districtsQueryApi, structuresQueryApi, domainsQueryApi, DEFAULT_CACHE_TTL);
+    }
+
+    /**
+     * API-enabled constructor with configurable cache TTL.
+     */
+    public RegionDomainResolver(
+        TownsQueryApi townsQueryApi,
+        DistrictsQueryApi districtsQueryApi,
+        StructuresQueryApi structuresQueryApi,
+        DomainsQueryApi domainsQueryApi,
+        Duration cacheTtl
+    ) {
+        this.townsQueryApi = townsQueryApi;
+        this.districtsQueryApi = districtsQueryApi;
+        this.structuresQueryApi = structuresQueryApi;
+        this.domainsQueryApi = domainsQueryApi;
+        this.cacheTtl = cacheTtl == null ? DEFAULT_CACHE_TTL : cacheTtl;
+    }
+
+    /**
+     * Resolve from the current cache only (non-blocking, main-thread safe).
+     */
+    public RegionSnapshot resolveRegions(Set<String> regionIds) {
+        Set<DomainSnapshot> domains = new HashSet<>();
+        for (String regionId : regionIds) {
+            getDomainByRegionId(regionId).ifPresent(domains::add);
+        }
+        return new RegionSnapshot(domains);
+    }
+
+    /**
+     * Resolve regions, pulling missing entries from API search endpoints, caching results, then returning the snapshot.
+     * Safe to run off the Paper main thread only.
+     */
+    public CompletableFuture<RegionSnapshot> resolveRegionsFromApi(Set<String> regionIds) {
+        if (regionIds == null || regionIds.isEmpty()) {
+            return CompletableFuture.completedFuture(new RegionSnapshot(Set.of()));
+        }
+
+        LOGGER.info("[KnK Resolver] resolveRegionsFromApi called for: " + regionIds);
+        if (domainsQueryApi == null) {
+            LOGGER.fine("[KnK Resolver] domainsQueryApi not configured; returning cache snapshot only");
+            return CompletableFuture.completedFuture(resolveRegions(regionIds));
+        }
+
+        Set<String> missing = regionIds.stream()
+            .filter(id -> !isCached(id))
+            .collect(Collectors.toSet());
+
+        if (missing.isEmpty()) {
+            LOGGER.info("[KnK Resolver] resolveRegionsFromApi all regions cached, returning snapshot");
+            return CompletableFuture.completedFuture(resolveRegions(regionIds));
+        }
+
+        DomainRegionQuery query = new DomainRegionQuery(missing, Boolean.TRUE);
+
+        return domainsQueryApi.searchDomainRegionDecisions(query)
+            .thenApply(results -> {
+                registerDomainRegionSummaries(results.values());
+                RegionSnapshot snapshot = resolveRegions(regionIds);
+                LOGGER.info("[KnK Resolver] resolveRegionsFromApi completed: domains=" + snapshot.domains().size());
+                return snapshot;
+            })
+            .exceptionally(ex -> {
+                LOGGER.log(Level.WARNING, "Failed domain search for WG regions {0}: {1}", new Object[]{missing, ex.getMessage()});
+                return resolveRegions(regionIds);
+            });
+    }
+
+    private boolean isCached(String wgRegionId) {
+        return getDomainByRegionId(wgRegionId).isPresent();
+    }
+
+    /**
+     * Batch cache warming for multiple region IDs.
+     * Efficiently preloads missing regions in a single API call.
+     * Useful for server startup or when preloading common regions.
+     * 
+     * @param regionIds Collection of WorldGuard region IDs to warm the cache with
+     * @return CompletableFuture that completes when all regions are cached
+     */
+    public CompletableFuture<Void> warmCache(Collection<String> regionIds) {
+        if (regionIds == null || regionIds.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        
+        Set<String> missing = regionIds.stream()
+            .filter(id -> !isCached(id))
+            .collect(Collectors.toSet());
+        
+        if (missing.isEmpty()) {
+            LOGGER.fine("[KnK Resolver] warmCache: all regions already cached");
+            return CompletableFuture.completedFuture(null);
+        }
+        
+        LOGGER.info("[KnK Resolver] warmCache: preloading " + missing.size() + " regions: " + missing);
+        
+        if (domainsQueryApi == null) {
+            LOGGER.warning("[KnK Resolver] warmCache: domainsQueryApi not configured, cannot warm cache");
+            return CompletableFuture.completedFuture(null);
+        }
+        
+        DomainRegionQuery query = new DomainRegionQuery(missing, Boolean.TRUE);
+        return domainsQueryApi.searchDomainRegionDecisions(query)
+            .thenAccept(results -> {
+                registerDomainRegionSummaries(results.values());
+                LOGGER.info("[KnK Resolver] warmCache: completed, cached " + results.size() + " domains");
+            })
+            .exceptionally(ex -> {
+                LOGGER.log(Level.WARNING, "warmCache failed for regions: " + missing, ex);
+                return null;
+            });
+    }
+
+    private void registerDomainRegionSummaries(Collection<DomainRegionSummary> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return;
+        }
+        Set<String> visited = new HashSet<>();
+        for (DomainRegionSummary summary : summaries) {
+            registerDomainHierarchy(summary, visited);
+        }
+    }
+
+    private void registerDomainHierarchy(DomainRegionSummary summary, Set<String> visited) {
+        if (summary == null) {
+            return;
+        }
+        String regionId = summary.wgRegionId();
+        if (regionId != null && !visited.add(regionId)) {
+            return;
+        }
+
+        registerDomainFromSummary(summary);
+
+        if (summary.parentDomainDecisions() != null) {
+            for (DomainRegionSummary parent : summary.parentDomainDecisions()) {
+                registerDomainHierarchy(parent, visited);
+            }
+        }
+    }
+
+    private void registerDomainFromSummary(DomainRegionSummary summary) {
+        registerDomain(new DomainSnapshot(
+            summary.id(),
+            summary.name(),
+            summary.description(),
+            summary.wgRegionId(),
+            summary.allowEntry(),
+            summary.allowExit(),
+            summary.domainType(),
+            summary.parentDomainDecisions() == null ? Set.of() :
+                summary.parentDomainDecisions().stream()
+                    .map(DomainRegionSummary::id)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet()),
+            Set.of() // Child domain IDs can be populated later if needed
+        ));
+    }
+
+    public Optional<DomainSnapshot> getDomainByRegionId(String wgRegionId) {
+        CachedValue<DomainSnapshot> cached = domainsByRegionId.get(wgRegionId);
+        if (cached == null) {
+            LOGGER.fine("[KnK Resolver] Domain cache MISS for: " + wgRegionId + " (not cached)");
+            return Optional.empty();
+        }
+        
+        if (cached.isExpired(cacheTtl)) {
+            // Return stale data but schedule background refresh
+            LOGGER.fine("[KnK Resolver] Domain cache STALE for: " + wgRegionId + " -> " + cached.value().name() + " (returning stale data, scheduling refresh)");
+            
+            // Schedule async refresh if API is available
+            if (domainsQueryApi != null) {
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        Set<String> refreshIds = new HashSet<>();
+                        refreshIds.add(wgRegionId);
+                        resolveRegionsFromApi(refreshIds);
+                        LOGGER.fine("[KnK Resolver] Background refresh completed for: " + wgRegionId);
+                    } catch (Exception ex) {
+                        LOGGER.log(Level.WARNING, "Background refresh failed for: " + wgRegionId, ex);
+                    }
+                });
+            }
+            
+            return Optional.of(cached.value());
+        }
+        
+        LOGGER.fine("[KnK Resolver] Domain cache HIT for: " + wgRegionId + " -> " + cached.value().name());
+        return Optional.of(cached.value());
+    }
+
+    public void registerDomain(DomainSnapshot domain) {
+        if (domain != null && domain.wgRegionId() != null) {
+            domainsByRegionId.put(domain.wgRegionId(), new CachedValue<>(domain, Instant.now()));
+        }
+    }
+
+    /**
+     * Fetch and cache a town by WG region ID using POST /Towns/search then GET /Towns/{id}.
+     */
+    // public CompletableFuture<Optional<TownSnapshot>> fetchTownByRegionId(String wgRegionId) {
+    //     if (wgRegionId == null || townsQueryApi == null) {
+    //         return CompletableFuture.completedFuture(Optional.empty());
+    //     }
+
+    //     CachedValue<TownSnapshot> cached = townsByRegionId.get(wgRegionId);
+    //     if (cached != null && !cached.isExpired(cacheTtl)) {
+    //         LOGGER.info("[KnK Resolver] fetchTown: returning cached for " + wgRegionId);
+    //         return CompletableFuture.completedFuture(Optional.of(cached.value()));
+    //     }
+
+    //     LOGGER.info("[KnK Resolver] fetchTown: calling API for " + wgRegionId);
+    //     PagedQuery query = new PagedQuery(1, 1, null, null, false, Map.of("wgRegionId", wgRegionId));
+    //     return townsQueryApi.search(query)
+    //         .thenCompose(page -> {
+    //             LOGGER.info("[KnK Resolver] fetchTown: search returned " + page.items().size() + " items for " + wgRegionId);
+    //             return page.items().stream().findFirst()
+    //                 .map(TownSummary::id)
+    //                 .filter(Objects::nonNull)
+    //                 .map(townId -> {
+    //                     LOGGER.info("[KnK Resolver] fetchTown: calling getById(" + townId + ") for " + wgRegionId);
+    //                     return townsQueryApi.getById(townId)
+    //                         .thenApply(detail -> {
+    //                             TownSnapshot snapshot = toTownSnapshot(detail);
+    //                                 // If town's wgRegionId is null, cache it under the search parameter instead
+    //                                 if (snapshot.wgRegionId() == null) {
+    //                                     LOGGER.warning("[KnK Resolver] fetchTown: Town '" + snapshot.name() + "' (id=" + snapshot.id() + ") has NULL wgRegionId! Caching under search param=" + wgRegionId);
+    //                                     TownSnapshot correctedSnapshot = new TownSnapshot(
+    //                                         snapshot.id(), snapshot.name(), wgRegionId,
+    //                                         snapshot.allowEntry(), snapshot.allowExit()
+    //                                     );
+    //                                     registerTown(correctedSnapshot);
+    //                                     return correctedSnapshot;
+    //                                 } else {
+    //                                     registerTown(snapshot);
+    //                                     LOGGER.info("[KnK Resolver] fetchTown: cached town '" + snapshot.name() + "' for param=" + wgRegionId + ", snapshot.wgRegionId=" + snapshot.wgRegionId());
+    //                                 }
+    //                             return snapshot;
+    //                         });
+    //                 })
+    //                 .orElseGet(() -> {
+    //                     LOGGER.info("[KnK Resolver] fetchTown: no town found for " + wgRegionId);
+    //                     return CompletableFuture.completedFuture(null);
+    //                 });
+    //         })
+    //         .handle((snapshot, ex) -> {
+    //             if (ex != null) {
+    //                 LOGGER.log(Level.WARNING, "Failed to resolve town for WG region {0}: {1}", new Object[]{wgRegionId, ex.getMessage()});
+    //                 townsByRegionId.remove(wgRegionId);
+    //                 return Optional.<TownSnapshot>empty();
+    //             }
+    //             return Optional.ofNullable(snapshot);
+    //         });
+    // }
+
+    /**
+     * Fetch and cache a district by WG region ID using POST /Districts/search then GET /Districts/{id}.
+     */
+    // public CompletableFuture<Optional<DistrictSnapshot>> fetchDistrictByRegionId(String wgRegionId) {
+    //     if (wgRegionId == null || districtsQueryApi == null) {
+    //         return CompletableFuture.completedFuture(Optional.empty());
+    //     }
+
+    //     CachedValue<DistrictSnapshot> cached = districtsByRegionId.get(wgRegionId);
+    //     if (cached != null && !cached.isExpired(cacheTtl)) {
+    //         LOGGER.info("[KnK Resolver] fetchDistrict: returning cached for " + wgRegionId);
+    //         return CompletableFuture.completedFuture(Optional.of(cached.value()));
+    //     }
+
+    //     LOGGER.info("[KnK Resolver] fetchDistrict: calling API for " + wgRegionId);
+    //     PagedQuery query = new PagedQuery(1, 1, null, null, false, Map.of("wgRegionId", wgRegionId));
+    //     return districtsQueryApi.search(query)
+    //         .thenCompose(page -> {
+    //             LOGGER.info("[KnK Resolver] fetchDistrict: search returned " + page.items().size() + " items for " + wgRegionId);
+    //             return page.items().stream().findFirst()
+    //                 .map(DistrictSummary::id)
+    //                 .filter(Objects::nonNull)
+    //                 .map(districtId -> {
+    //                     LOGGER.info("[KnK Resolver] fetchDistrict: calling getById(" + districtId + ") for " + wgRegionId);
+    //                     return districtsQueryApi.getById(districtId)
+    //                         .thenApply(detail -> {
+    //                             DistrictSnapshot snapshot = toDistrictSnapshot(detail);
+    //                                 // If district's wgRegionId is null, cache it under the search parameter instead
+    //                                 if (snapshot.wgRegionId() == null) {
+    //                                     LOGGER.warning("[KnK Resolver] fetchDistrict: District '" + snapshot.name() + "' (id=" + snapshot.id() + ") has NULL wgRegionId! Caching under search param=" + wgRegionId);
+    //                                     DistrictSnapshot correctedSnapshot = new DistrictSnapshot(
+    //                                         snapshot.id(), snapshot.name(), wgRegionId, snapshot.townId(), 
+    //                                         snapshot.allowEntry(), snapshot.allowExit()
+    //                                     );
+    //                                     registerDistrict(correctedSnapshot);
+    //                                     return correctedSnapshot;
+    //                                 } else {
+    //                                     registerDistrict(snapshot);
+    //                                     LOGGER.info("[KnK Resolver] fetchDistrict: cached district '" + snapshot.name() + "' for param=" + wgRegionId + ", snapshot.wgRegionId=" + snapshot.wgRegionId());
+    //                                 }
+    //                             return snapshot;
+    //                         });
+    //                 })
+    //                 .orElseGet(() -> {
+    //                     LOGGER.info("[KnK Resolver] fetchDistrict: no district found for " + wgRegionId);
+    //                     return CompletableFuture.completedFuture(null);
+    //                 });
+    //         })
+    //         .handle((snapshot, ex) -> {
+    //             if (ex != null) {
+    //                 LOGGER.log(Level.WARNING, "Failed to resolve district for WG region {0}: {1}", new Object[]{wgRegionId, ex.getMessage()});
+    //                 districtsByRegionId.remove(wgRegionId);
+    //                 return Optional.<DistrictSnapshot>empty();
+    //             }
+    //             return Optional.ofNullable(snapshot);
+    //         });
+    // }
+
+    /**
+     * Fetch and cache a structure by WG region ID using POST /Structures/search then GET /Structures/{id}.
+     */
+    // public CompletableFuture<Optional<StructureSnapshot>> fetchStructureByRegionId(String wgRegionId) {
+    //     if (wgRegionId == null || structuresQueryApi == null) {
+    //         return CompletableFuture.completedFuture(Optional.empty());
+    //     }
+
+    //     CachedValue<StructureSnapshot> cached = structuresByRegionId.get(wgRegionId);
+    //     if (cached != null && !cached.isExpired(cacheTtl)) {
+    //         return CompletableFuture.completedFuture(Optional.of(cached.value()));
+    //     }
+
+    //     PagedQuery query = new PagedQuery(1, 1, null, null, false, Map.of("wgRegionId", wgRegionId));
+    //     return structuresQueryApi.search(query)
+    //         .thenCompose(page -> page.items().stream().findFirst()
+    //             .map(StructureSummary::id)
+    //             .filter(Objects::nonNull)
+    //             .map(structureId -> structuresQueryApi.getById(structureId)
+    //                 .thenApply(detail -> {
+    //                     StructureSnapshot snapshot = toStructureSnapshot(detail);
+    //                         // If structure's wgRegionId is null, cache it under the search parameter instead
+    //                         if (snapshot.wgRegionId() == null) {
+    //                             LOGGER.warning("[KnK Resolver] fetchStructure: Structure '" + snapshot.name() + "' (id=" + snapshot.id() + ") has NULL wgRegionId! Caching under search param=" + wgRegionId);
+    //                             StructureSnapshot correctedSnapshot = new StructureSnapshot(
+    //                                 snapshot.id(), snapshot.name(), wgRegionId, snapshot.districtId(),
+    //                                 snapshot.townId(), snapshot.allowEntry(), snapshot.allowExit(), snapshot.isGate()
+    //                             );
+    //                             registerStructure(correctedSnapshot);
+    //                             return correctedSnapshot;
+    //                         } else {
+    //                             registerStructure(snapshot);
+    //                         }
+    //                     return snapshot;
+    //                 }))
+    //             .orElseGet(() -> CompletableFuture.completedFuture(null)))
+    //         .handle((snapshot, ex) -> {
+    //             if (ex != null) {
+    //                 LOGGER.log(Level.WARNING, "Failed to resolve structure for WG region {0}: {1}", new Object[]{wgRegionId, ex.getMessage()});
+    //                 structuresByRegionId.remove(wgRegionId);
+    //                 return Optional.<StructureSnapshot>empty();
+    //             }
+    //             return Optional.ofNullable(snapshot);
+    //         });
+    // }
+
+    private StructureSnapshot toStructureSnapshot(StructureDetail detail) {
+        if (detail == null) return null;
+        // TODO: Add gate detection once exposed by API schema
+        return new StructureSnapshot(
+            detail.id(),
+            detail.name(),
+            detail.wgRegionId(),
+            detail.districtId(),
+            null,
+            detail.allowEntry(),
+            detail.allowExit(),
+            false
+        );
+    }
+
+    public record RegionSnapshot(
+        Set<DomainSnapshot> domains
+    ) {}
+
+    public record DomainSnapshot(
+        Integer id,
+        String name,
+        String description,
+        String wgRegionId,
+        Boolean allowEntry,
+        Boolean allowExit,
+        String domainType,
+        Set<Integer> parentDomainIds,
+        Set<Integer> childDomainIds
+    ) {}
+
+    public record StructureSnapshot(
+        Integer id,
+        String name,
+        String wgRegionId,
+        Integer districtId,
+        Integer townId,
+        Boolean allowEntry,
+        Boolean allowExit,
+        Boolean isGate
+    ) {}
+
+    private record CachedValue<T>(T value, Instant cachedAt) {
+        boolean isExpired(Duration ttl) {
+            return cachedAt.plus(ttl).isBefore(Instant.now());
+        }
+    }
+}
