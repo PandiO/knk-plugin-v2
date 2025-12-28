@@ -217,6 +217,23 @@ public class RegionDomainResolver {
         ));
     }
 
+    /**
+     * Get domain from cache WITHOUT triggering background refresh.
+     * Used by WorldGuardRegionTracker to avoid refresh storms.
+     * Returns cached value even if expired (caller decides whether to refresh).
+     */
+    public Optional<DomainSnapshot> getDomainByRegionIdNoRefresh(String wgRegionId) {
+        CachedValue<DomainSnapshot> cached = domainsByRegionId.get(wgRegionId);
+        if (cached == null) {
+            return Optional.empty();
+        }
+        return Optional.of(cached.value());
+    }
+
+    /**
+     * Get domain from cache. Returns empty if not cached.
+     * Does NOT trigger automatic background refresh to prevent API storms.
+     */
     public Optional<DomainSnapshot> getDomainByRegionId(String wgRegionId) {
         CachedValue<DomainSnapshot> cached = domainsByRegionId.get(wgRegionId);
         if (cached == null) {
@@ -225,27 +242,11 @@ public class RegionDomainResolver {
         }
         
         if (cached.isExpired(cacheTtl)) {
-            // Return stale data but schedule background refresh
-            LOGGER.fine("[KnK Resolver] Domain cache STALE for: " + wgRegionId + " -> " + cached.value().name() + " (returning stale data, scheduling refresh)");
-            
-            // Schedule async refresh if API is available
-            if (domainsQueryApi != null) {
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        Set<String> refreshIds = new HashSet<>();
-                        refreshIds.add(wgRegionId);
-                        resolveRegionsFromApi(refreshIds);
-                        LOGGER.fine("[KnK Resolver] Background refresh completed for: " + wgRegionId);
-                    } catch (Exception ex) {
-                        LOGGER.log(Level.WARNING, "Background refresh failed for: " + wgRegionId, ex);
-                    }
-                });
-            }
-            
-            return Optional.of(cached.value());
+            LOGGER.fine("[KnK Resolver] Domain cache STALE for: " + wgRegionId + " -> " + cached.value().name());
+        } else {
+            LOGGER.fine("[KnK Resolver] Domain cache HIT for: " + wgRegionId + " -> " + cached.value().name());
         }
         
-        LOGGER.fine("[KnK Resolver] Domain cache HIT for: " + wgRegionId + " -> " + cached.value().name());
         return Optional.of(cached.value());
     }
 

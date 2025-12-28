@@ -15,9 +15,10 @@ import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 
-import com.ibm.icu.util.Region;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
+import net.kyori.adventure.text.Component;
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.ApplicableRegionSet;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
@@ -27,9 +28,20 @@ import com.sk89q.worldguard.protection.regions.RegionQuery;
 import net.knightsandkings.knk.core.regions.RegionTransitionDecision;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
+import net.knightsandkings.knk.core.regions.RegionTransitionType;
 import net.knightsandkings.knk.paper.events.OnRegionEnterEvent;
 import net.knightsandkings.knk.paper.events.OnRegionLeaveEvent;
+import net.knightsandkings.knk.paper.utils.ColorOptions;
 
+/**
+ * Tracks WorldGuard region transitions for players with intelligent caching and API call optimization.
+ * 
+ * Key features:
+ * - In-flight request tracking prevents duplicate API calls
+ * - Queue-based re-validation enforces security after async API fetch
+ * - Stale cache usage allows movement while fresh data loads
+ * - Failed lookup cooldown prevents API hammering
+ */
 public class WorldGuardRegionTracker {
     private final RegionContainer regionContainer;
     private final RegionQuery regionQuery;
@@ -38,147 +50,100 @@ public class WorldGuardRegionTracker {
     private final Executor lookupExecutor;
     private final Logger logger;
     private final boolean enableConsoleLogging;
+    private final Plugin plugin;
 
     private final Map<UUID, Set<String>> regionsByPlayer = new HashMap<>();
-    private final Map<String, Long> failedRegionLookups = new ConcurrentHashMap<>();  // Track failed lookups with timestamp
-    private static final long FAILED_LOOKUP_COOLDOWN_MS = 5000;  // 5 second cooldown before retrying
+    private final Map<String, Long> failedRegionLookups = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<Void>> inFlightLookups = new ConcurrentHashMap<>();
+    
+    private static final long FAILED_LOOKUP_COOLDOWN_MS = 30000;  // 30 second cooldown
 
-    public WorldGuardRegionTracker(RegionTransitionService transitionService, RegionDomainResolver regionResolver, Executor lookupExecutor, Logger logger, boolean enableConsoleLogging) {
+    public WorldGuardRegionTracker(RegionTransitionService transitionService, RegionDomainResolver regionResolver, Executor lookupExecutor, Plugin plugin, Logger logger, boolean enableConsoleLogging) {
         this.regionContainer = WorldGuard.getInstance().getPlatform().getRegionContainer();
         this.regionQuery = regionContainer.createQuery();
         this.transitionService = transitionService;
         this.regionResolver = regionResolver;
         this.lookupExecutor = lookupExecutor;
+        this.plugin = plugin;
         this.logger = logger;
         this.enableConsoleLogging = enableConsoleLogging;
     }
 
+    public WorldGuardRegionTracker(RegionTransitionService transitionService, RegionDomainResolver regionResolver, Executor lookupExecutor, Plugin plugin) {
+        this(transitionService, regionResolver, lookupExecutor, plugin, null, false);
+    }
+
+    @Deprecated
     public WorldGuardRegionTracker(RegionTransitionService transitionService, RegionDomainResolver regionResolver, Executor lookupExecutor) {
-        this(transitionService, regionResolver, lookupExecutor, null, false);
+        this(transitionService, regionResolver, lookupExecutor, null, null, false);
     }
 
     /**
-     * @return RegionTransitionDecision if a region change occurred, otherwise null.
+     * Handle player movement between WorldGuard regions.
+     * 
+     * @return RegionTransitionDecision if regions changed and all data is cached, null otherwise
      */
     public RegionTransitionDecision handleMove(Player player, Location from, Location to) {
         if (player == null || to == null) {
             return null;
         }
 
-        // Performance tweak: only check if the player has changed block or world
-        // if (!hasChangedBlock(from, to)) {
-        //     return null;
-        // }
-
         UUID playerId = player.getUniqueId();
         Set<String> oldRegions = regionsByPlayer.getOrDefault(playerId, Collections.emptySet());
         Set<String> newRegions = getRegionNamesAt(to);
-            Bukkit.getLogger().info("[KnK Tracker] " + player.getName() + " move: oldRegions=" + oldRegions + ", newRegions=" + newRegions);
 
         if (logger != null) {
-            logger.info("[KnK Tracker] " + player.getName() + " move: oldRegions=" + oldRegions + ", newRegions=" + newRegions);
-            
-            // Verify district region ID distinctness
-            if (!oldRegions.equals(newRegions)) {
-                Set<String> entered = new HashSet<>(newRegions);
-                entered.removeAll(oldRegions);
-                Set<String> left = new HashSet<>(oldRegions);
-                left.removeAll(newRegions);
-                
-                if (!entered.isEmpty() || !left.isEmpty()) {
-                    logger.info("[KnK Tracker] " + player.getName() + " WG region change detected: entered=" + entered + ", left=" + left);
-                    
-                    // Fire RegionEnterEvent for each region entered
-                    for (String regionId : entered) {
-                        OnRegionEnterEvent enterEvent = new OnRegionEnterEvent(player, regionId);
-                        Bukkit.getPluginManager().callEvent(enterEvent);
-                    }
-                    
-                    // Fire RegionLeaveEvent for each region left
-                    for (String regionId : left) {
-                        OnRegionLeaveEvent leaveEvent = new OnRegionLeaveEvent(player, regionId);
-                        Bukkit.getPluginManager().callEvent(leaveEvent);
-                    }
-                }
-            }
+            logger.fine("[KnK Tracker] " + player.getName() + " move: oldRegions=" + oldRegions + ", newRegions=" + newRegions);
         }
 
+        // Fire region events if changed
+        if (!oldRegions.equals(newRegions)) {
+            fireRegionEvents(player, oldRegions, newRegions);
+        }
+
+        // No region change = no processing
         if (newRegions.equals(oldRegions)) {
-            if (logger != null) {
-                logger.info("[KnK Tracker] " + player.getName() + " no region change, returning null");
-            }
             return null;
         }
 
-        // Fire-and-forget API prefetch off the main thread for any region IDs we haven't cached yet.
-        // Use union of old and new so message building has complete context (e.g., same-town district→district).
+        // Check cache status for all relevant regions
         Set<String> lookupIds = new HashSet<>(newRegions);
         lookupIds.addAll(oldRegions);
         
-        boolean needsLookup = needsLookup(lookupIds);
-        if (logger != null) {
-            logger.info("[KnK Tracker] " + player.getName() + " cache check: lookupIds=" + lookupIds + ", needsLookup=" + needsLookup);
-        }
+        CacheStatus cacheStatus = checkCacheStatus(lookupIds);
         
-        if (needsLookup) {
-            if (logger != null) {
-                logger.info("[KnK Tracker] " + player.getName() + " starting async prefetch for: " + lookupIds);
+        if (logger != null) {
+            logger.fine("[KnK Tracker] " + player.getName() + " cache: fresh=" + cacheStatus.fresh.size() + 
+                        ", stale=" + cacheStatus.stale.size() + ", missing=" + cacheStatus.missing.size() + 
+                        ", inFlight=" + cacheStatus.inFlight.size());
+        }
+
+        // If data is missing or being fetched, start/wait for async lookup
+        if (!cacheStatus.missing.isEmpty() || !cacheStatus.inFlight.isEmpty()) {
+            if (!cacheStatus.missing.isEmpty()) {
+                startAsyncLookupWithRevalidation(player, cacheStatus.missing, oldRegions, newRegions);
             }
             
-            // Update player regions now
+            // Update player regions and allow movement with stale/partial data
             regionsByPlayer.put(playerId, newRegions);
             
-            CompletableFuture.runAsync(() -> {
-                if (logger != null) {
-                    logger.info("[KnK Tracker] " + player.getName() + " async prefetch started for: " + lookupIds);
-                }
-                try {
-                    regionResolver.resolveRegionsFromApi(lookupIds).get();  // Block until complete
-                    if (logger != null) {
-                        logger.info("[KnK Tracker] " + player.getName() + " async prefetch completed for: " + lookupIds);
-                    }
-                } catch (Exception ex) {
-                    if (logger != null) {
-                        logger.severe("[KnK Tracker] " + player.getName() + " async prefetch FAILED: " + ex.getMessage());
-                    }
-                    // Record these regions as failed so we don't retry immediately
-                    recordFailedLookup(lookupIds);
-                }
-            }, lookupExecutor)
-                .exceptionally(ex -> {
-                    if (logger != null) {
-                        logger.severe("[KnK Tracker] " + player.getName() + " async prefetch task FAILED: " + ex.getMessage());
-                    }
-                    recordFailedLookup(lookupIds);
-                    return null;
-                });
-
-            // Still allow movement even if metadata isn't cached yet (fallback behavior)
-            // If player is already in a region on join, just allow it without messages
             if (logger != null) {
-                logger.info("[KnK Tracker] " + player.getName() + " allowing movement (metadata fetch in progress)");
+                logger.fine("[KnK Tracker] " + player.getName() + " allowing movement (fetch in progress)");
             }
-            // Return null to allow movement without messages while metadata is fetching
             return null;
         }
 
-        // Log region transitions if enabled (only when actually processing the transition)
-        if (enableConsoleLogging && logger != null) {
-            logRegionTransition(player, oldRegions, newRegions);
-        }
-
-        // Update player regions now that we're processing the transition
+        // All data cached and fresh - process transition
         regionsByPlayer.put(playerId, newRegions);
         
-        Bukkit.getLogger().info("[KnK Tracker] " + player.getName() + " calling transitionService.handleRegionTransition");
         if (logger != null) {
-            logger.info("[KnK Tracker] " + player.getName() + " calling transitionService.handleRegionTransition");
+            logger.fine("[KnK Tracker] " + player.getName() + " processing transition (all data cached)");
         }
 
         RegionTransitionDecision decision = transitionService.handleRegionTransition(playerId, oldRegions, newRegions);
         
-        if (logger != null) {
-            logger.info("[KnK Tracker] " + player.getName() + " decision: allowed=" + decision.isMovementAllowed() + 
+        if (logger != null && decision != null) {
+            logger.fine("[KnK Tracker] " + player.getName() + " decision: allowed=" + decision.isMovementAllowed() + 
                         ", message=" + decision.getMessage().orElse("(none)"));
         }
         
@@ -192,126 +157,251 @@ public class WorldGuardRegionTracker {
     }
 
     /**
-     * Called on player join to initialize their region set and pre-warm API cache
-     * to avoid initial misleading leave-only messages.
+     * Handle player join - pre-warm cache for current regions.
      */
     public RegionTransitionDecision handleJoin(Player player) {
         if (player == null || player.getLocation() == null) return null;
+        
         UUID playerId = player.getUniqueId();
         Set<String> current = getRegionNamesAt(player.getLocation());
         
         if (logger != null) {
-            logger.info("[KnK Tracker] " + player.getName() + " JOIN: initial regions=" + current);
+            logger.fine("[KnK Tracker] " + player.getName() + " JOIN: initial regions=" + current);
         }
         
         regionsByPlayer.put(playerId, current);
         
         if (!current.isEmpty()) {
-            if (logger != null) {
-                logger.info("[KnK Tracker] " + player.getName() + " JOIN: starting cache pre-warm for: " + current);
+            // Start async pre-warm (don't block join)
+            CacheStatus cacheStatus = checkCacheStatus(current);
+            if (!cacheStatus.missing.isEmpty()) {
+                if (logger != null) {
+                    logger.fine("[KnK Tracker] " + player.getName() + " JOIN: pre-warming cache for: " + cacheStatus.missing);
+                }
+                startAsyncLookupWithRevalidation(player, cacheStatus.missing, Collections.emptySet(), current);
             }
-            CompletableFuture.runAsync(() -> {
-                if (logger != null) {
-                    logger.info("[KnK Tracker] " + player.getName() + " JOIN: async pre-warm started");
-                }
-                regionResolver.resolveRegionsFromApi(current);
-                if (logger != null) {
-                    logger.info("[KnK Tracker] " + player.getName() + " JOIN: async pre-warm completed");
-                }
-            }, lookupExecutor)
-                .exceptionally(ex -> {
-                    if (logger != null) {
-                        logger.severe("[KnK Tracker] " + player.getName() + " JOIN: pre-warm FAILED: " + ex.getMessage());
-                    }
-                    return null;
-                });
         }
-        
-        if (enableConsoleLogging && logger != null && !current.isEmpty()) {
-            for (String r : current) {
-                logger.info("[KnK Region] " + player.getName() + " joined inside region: " + r);
-            }
+
+        // Process transition if all data is cached
+        if (current.isEmpty()) {
+            return null;
         }
 
         RegionTransitionDecision decision = transitionService.handleRegionTransition(playerId, Collections.emptySet(), current);
         return decision;
     }
 
-    private boolean hasChangedBlock(Location from, Location to) {
-        if (from == null || to == null) return true;
-        return from.getBlockX() != to.getBlockX()
-                || from.getBlockY() != to.getBlockY()
-                || from.getBlockZ() != to.getBlockZ()
-                || !Objects.equals(from.getWorld(), to.getWorld());
-    }
-
     private Set<String> getRegionNamesAt(Location bukkitLocation) {
-        if (bukkitLocation.getWorld() == null) {
+        if (bukkitLocation == null || bukkitLocation.getWorld() == null) {
             return Collections.emptySet();
         }
 
         com.sk89q.worldedit.util.Location wgLoc = BukkitAdapter.adapt(bukkitLocation);
         ApplicableRegionSet set = regionQuery.getApplicableRegions(wgLoc);
-        if (logger != null && enableConsoleLogging) {
-                    logger.info("[KnK WG] Querying regions at location: world=" + bukkitLocation.getWorld().getName() + 
-                ", x=" + bukkitLocation.getX() + ", y=" + bukkitLocation.getY() + ", z=" + bukkitLocation.getZ() + ". Regions found: " + set.size());
-        }
 
         Set<String> names = new HashSet<>();
         for (ProtectedRegion region : set) {
             names.add(region.getId());
-            if (logger != null && enableConsoleLogging) {
-                logger.info("[KnK WG] Region detected at location: id=" + region.getId() + 
-                            ", type=" + region.getType() + ", priority=" + region.getPriority());
-            }
-        }
-        
-        if (logger != null && enableConsoleLogging && !names.isEmpty()) {
-            logger.info("[KnK WG] Total regions at location: " + names);
         }
         
         return names;
     }
 
-    private boolean needsLookup(Set<String> regionIds) {
-        if (regionResolver == null || regionIds == null || regionIds.isEmpty()) {
-            return false;
-        }
+    /**
+     * Check cache status for all region IDs.
+     * Returns breakdown of fresh/stale/missing/in-flight regions.
+     */
+    private CacheStatus checkCacheStatus(Set<String> regionIds) {
+        Set<String> fresh = new HashSet<>();
+        Set<String> stale = new HashSet<>();
+        Set<String> missing = new HashSet<>();
+        Set<String> inFlight = new HashSet<>();
 
         for (String id : regionIds) {
-            // Check if this region was recently failed to avoid hammering the API
+            // Check if already being fetched
+            if (inFlightLookups.containsKey(id)) {
+                inFlight.add(id);
+                continue;
+            }
+
+            // Check if recently failed (cooldown period)
             Long lastFailedTime = failedRegionLookups.get(id);
             if (lastFailedTime != null && System.currentTimeMillis() - lastFailedTime < FAILED_LOOKUP_COOLDOWN_MS) {
-                if (logger != null) {
-                    logger.info("[KnK Tracker] Region '" + id + "' recently failed lookup, skipping retry");
-                }
-                continue;  // Skip lookup for this region during cooldown
+                // Treat failed lookups as "stale" data (allow movement but skip refetch)
+                stale.add(id);
+                continue;
             }
-            
-            boolean isDomain = regionResolver.getDomainByRegionId(id).isPresent();
-            boolean cached = isDomain;
-            
-            if (logger != null) {
-                logger.info("[KnK Tracker] Cache check for '" + id + "': domain=" + isDomain + ", cached=" + cached);
-            }
-            
-            if (!cached) {
-                if (logger != null) {
-                    logger.info("[KnK Tracker] Region '" + id + "' NOT CACHED, lookup needed");
-                }
-                return true;
+
+            // Check cache (without triggering background refresh)
+            if (!regionResolver.getDomainByRegionIdNoRefresh(id).isPresent()) {
+                missing.add(id);
+            } else {
+                // Domain exists in cache (fresh or stale, doesn't matter - we have data)
+                fresh.add(id);
             }
         }
+
+        return new CacheStatus(fresh, stale, missing, inFlight);
+    }
+
+    /**
+     * Start async lookup for missing regions with queue-based re-validation.
+     * After API fetch completes, re-validates player location on main thread.
+     */
+    private void startAsyncLookupWithRevalidation(Player player, Set<String> missingIds, Set<String> oldRegions, Set<String> newRegions) {
+        if (missingIds.isEmpty()) {
+            return;
+        }
+
+        // Create combined key for this exact set of regions
+        String lookupKey = String.join(",", missingIds.stream().sorted().toList());
+        
+        // Check if this exact set is already being fetched
+        if (inFlightLookups.containsKey(lookupKey)) {
+            if (logger != null) {
+                logger.fine("[KnK Tracker] " + player.getName() + " lookup already in-flight for: " + missingIds);
+            }
+            return;
+        }
+
+        if (logger != null) {
+            logger.fine("[KnK Tracker] " + player.getName() + " starting async lookup for: " + missingIds);
+        }
+
+        // Mark all individual IDs as in-flight
+        for (String id : missingIds) {
+            inFlightLookups.putIfAbsent(id, new CompletableFuture<>());
+        }
+
+        UUID playerId = player.getUniqueId();
+        
+        CompletableFuture<Void> lookupFuture = CompletableFuture.runAsync(() -> {
+            try {
+                regionResolver.resolveRegionsFromApi(missingIds).get();
+                if (logger != null) {
+                    logger.fine("[KnK Tracker] " + player.getName() + " async lookup completed: " + missingIds);
+                }
+                
+                // Schedule re-validation on main thread
+                if (plugin != null) {
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        revalidatePlayerLocation(player, oldRegions, newRegions);
+                    });
+                }
+                
+                // Mark individual lookups as complete
+                for (String id : missingIds) {
+                    CompletableFuture<Void> idFuture = inFlightLookups.remove(id);
+                    if (idFuture != null) {
+                        idFuture.complete(null);
+                    }
+                }
+            } catch (Exception ex) {
+                if (logger != null) {
+                    logger.warning("[KnK Tracker] " + player.getName() + " async lookup FAILED: " + ex.getMessage());
+                }
+                recordFailedLookup(missingIds);
+                
+                // Mark individual lookups as failed
+                for (String id : missingIds) {
+                    CompletableFuture<Void> idFuture = inFlightLookups.remove(id);
+                    if (idFuture != null) {
+                        idFuture.completeExceptionally(ex);
+                    }
+                }
+            }
+        }, lookupExecutor);
+
+        inFlightLookups.put(lookupKey, lookupFuture);
+    }
+
+    /**
+     * Re-validate player location after async API fetch completes.
+     * Checks if player is still in the regions and enforces entry/exit rules.
+     * MUST be called on main thread.
+     */
+    private void revalidatePlayerLocation(Player player, Set<String> oldRegions, Set<String> expectedNewRegions) {
+        if (player == null || !player.isOnline()) {
+            if (logger != null) {
+                logger.fine("[KnK Tracker] " + player.getName() + " revalidation skipped (offline)");
+            }
+            return;
+        }
+
+        UUID playerId = player.getUniqueId();
+        Set<String> currentRegions = getRegionNamesAt(player.getLocation());
         
         if (logger != null) {
-            logger.info("[KnK Tracker] All regions cached, no lookup needed");
+            logger.fine("[KnK Tracker] " + player.getName() + " revalidating: expected=" + expectedNewRegions + ", current=" + currentRegions);
         }
-        return false;
+
+        // Check if player is still in the expected regions
+        if (!currentRegions.equals(expectedNewRegions)) {
+            if (logger != null) {
+                logger.fine("[KnK Tracker] " + player.getName() + " moved during fetch, skipping revalidation");
+            }
+            return;
+        }
+
+        // Re-run transition check with fresh data
+        RegionTransitionDecision decision = transitionService.handleRegionTransition(playerId, oldRegions, currentRegions);
+        
+        if (decision != null && !decision.isMovementAllowed()) {
+            // Movement should have been denied - teleport player back
+            if (logger != null) {
+                logger.warning("[KnK Tracker] " + player.getName() + " entry denied after revalidation, teleporting to spawn");
+            }
+            
+            decision.getMessage().ifPresent(msg -> 
+                player.sendMessage(org.bukkit.ChatColor.RED + msg)
+            );
+            
+            // Teleport to world spawn
+            Location spawnLocation = player.getWorld().getSpawnLocation();
+            player.teleport(spawnLocation);
+            
+            // Fire exit events for regions player shouldn't be in
+            for (String regionId : currentRegions) {
+                Bukkit.getPluginManager().callEvent(new OnRegionLeaveEvent(player, regionId));
+            }
+            
+            // Update tracked regions
+            regionsByPlayer.put(playerId, Collections.emptySet());
+        } else if (decision != null ) {
+            // Entry allowed - show message
+            decision.getMessage().ifPresent(msg -> 
+                player.sendActionBar(Component.text(msg).color(ColorOptions.message))
+            );
+        }
     }
-    
+
     /**
-     * Mark a region ID as having failed lookup, to avoid repeated API calls.
+     * Fire region enter/leave events.
      */
+    private void fireRegionEvents(Player player, Set<String> oldRegions, Set<String> newRegions) {
+        Set<String> entered = new HashSet<>(newRegions);
+        entered.removeAll(oldRegions);
+        
+        Set<String> left = new HashSet<>(oldRegions);
+        left.removeAll(newRegions);
+
+        if (entered.isEmpty() && left.isEmpty()) {
+            return;
+        }
+
+        if (logger != null) {
+            logger.fine("[KnK Tracker] " + player.getName() + " WG region change: entered=" + entered + ", left=" + left);
+        }
+
+        for (String regionId : entered) {
+            Bukkit.getPluginManager().callEvent(new OnRegionEnterEvent(player, regionId));
+        }
+
+        for (String regionId : left) {
+            Bukkit.getPluginManager().callEvent(new OnRegionLeaveEvent(player, regionId));
+        }
+    }
+
     private void recordFailedLookup(Set<String> regionIds) {
         long now = System.currentTimeMillis();
         for (String id : regionIds) {
@@ -319,20 +409,13 @@ public class WorldGuardRegionTracker {
         }
     }
 
-    private void logRegionTransition(Player player, Set<String> oldRegions, Set<String> newRegions) {
-        Set<String> entered = new HashSet<>(newRegions);
-        entered.removeAll(oldRegions);
-
-        Set<String> left = new HashSet<>(oldRegions);
-        left.removeAll(newRegions);
-
-        for (String region : entered) {
-            logger.info("[KnK Region] " + player.getName() + " entered region: " + region);
-        }
-
-        for (String region : left) {
-            logger.info("[KnK Region] " + player.getName() + " left region: " + region);
-        }
-    }
-    
+    /**
+     * Helper record for cache status breakdown.
+     */
+    private record CacheStatus(
+        Set<String> fresh,      // Cached and available
+        Set<String> stale,      // Recently failed (cooldown)
+        Set<String> missing,    // Not in cache at all
+        Set<String> inFlight    // Currently being fetched
+    ) {}
 }

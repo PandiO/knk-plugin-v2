@@ -115,6 +115,7 @@ public class KnKPlugin extends JavaPlugin {
                 regionTransitionService,
                 regionDomainResolver,
                 regionLookupExecutor,
+                this,  // Plugin instance for scheduler access
                 Logger.getLogger(WorldGuardRegionTracker.class.getName()),
                 true  // Enable console logging; set to false to disable
             );
