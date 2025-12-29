@@ -8,6 +8,7 @@ import net.knightsandkings.knk.api.client.KnkApiClient;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
+import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
@@ -32,6 +33,7 @@ import java.util.logging.Logger;
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
     private KnkConfig config;
+    private CacheManager cacheManager;
     private TownsQueryApi townsQueryApi;
     private LocationsQueryApi locationsQueryApi;
     private DistrictsQueryApi districtsQueryApi;
@@ -81,6 +83,10 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("StreetsQueryApi wired from API client");
             getLogger().info("StructuresQueryApi wired from API client");
             getLogger().info("DomainsQueryApi wired from API client");
+            
+            // Initialize cache manager
+            this.cacheManager = new CacheManager(config.cache().ttl());
+            getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
 
             // Register commands
             registerCommands();
@@ -91,7 +97,10 @@ public class KnKPlugin extends JavaPlugin {
                 townsQueryApi,
                 districtsQueryApi,
                 structuresQueryApi,
-                domainsQueryApi
+                domainsQueryApi,
+                cacheManager.getTownCache(),
+                cacheManager.getDistrictCache(),
+                cacheManager.getStructureCache()
             );
 
             // Dedicated executor for region lookup (API prefetch); daemon threads to avoid blocking shutdown.
@@ -135,6 +144,11 @@ public class KnKPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (cacheManager != null) {
+            getLogger().info("Logging final cache metrics...");
+            cacheManager.logMetrics();
+            cacheManager.clearAll();
+        }
         if (apiClient != null) {
             getLogger().info("Shutting down API client...");
             apiClient.shutdown();
@@ -153,12 +167,21 @@ public class KnKPlugin extends JavaPlugin {
         pluginManager.registerEvents(new PlayerListener(), this);
     }
     
+    /**
+     * Returns the cache manager for accessing cache statistics.
+     *
+     * @return CacheManager instance
+     */
+    public CacheManager getCacheManager() {
+        return cacheManager;
+    }
+    
     // No extra helpers needed; API client constructs and owns HTTP internals.
     
     private void registerCommands() {
         PluginCommand knkCommand = getCommand("knk");
         if (knkCommand != null) {
-            knkCommand.setExecutor(new KnkAdminCommand(this, apiClient.getHealthApi(), townsQueryApi, locationsQueryApi, districtsQueryApi, streetsQueryApi));
+            knkCommand.setExecutor(new KnkAdminCommand(this, apiClient.getHealthApi(), townsQueryApi, locationsQueryApi, districtsQueryApi, streetsQueryApi, cacheManager));
             getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");

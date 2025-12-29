@@ -5,6 +5,7 @@ import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.paper.cache.CacheManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -22,7 +23,7 @@ public class KnkAdminCommand implements CommandExecutor {
     private final CommandRegistry registry = new CommandRegistry();
     private final HelpSubcommand helpSubcommand;
 
-    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi, DistrictsQueryApi districtsApi, StreetsQueryApi streetsApi) {
+    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi, DistrictsQueryApi districtsApi, StreetsQueryApi streetsApi, CacheManager cacheManager) {
         this.helpSubcommand = new HelpSubcommand(registry);
         
         // Register health
@@ -31,6 +32,17 @@ public class KnkAdminCommand implements CommandExecutor {
                 new CommandMetadata("health", "Check API backend health", "/knk health", "knk.admin"),
                 (sender, args) -> healthCommand.onCommand(sender, null, "knk", new String[0])
         );
+        
+        // Register cache command
+        if (cacheManager != null) {
+            registry.register(
+                new CommandMetadata("cache", "View cache statistics and health", "/knk cache", "knk.admin"),
+                (sender, args) -> {
+                    sender.sendMessage(ChatColor.translateAlternateColorCodes('§', cacheManager.getHealthSummary()));
+                    return true;
+                }
+            );
+        }
         
         // Register towns
         TownsDebugCommand townsCommand = new TownsDebugCommand(plugin, townsApi);

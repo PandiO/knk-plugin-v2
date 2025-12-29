@@ -43,7 +43,19 @@ public class ConfigLoader {
         
         KnkConfig.ApiConfig apiConfig = new KnkConfig.ApiConfig(baseUrl, debugLogging, allowUntrustedSsl, auth, timeouts);
         
-        KnkConfig knkConfig = new KnkConfig(apiConfig);
+        // Load cache configuration
+        ConfigurationSection cacheSection = config.getConfigurationSection("cache");
+        KnkConfig.CacheConfig cacheConfig;
+        if (cacheSection != null) {
+            cacheConfig = new KnkConfig.CacheConfig(
+                cacheSection.getInt("ttl-seconds", 60)
+            );
+        } else {
+            // Use defaults if cache section is missing
+            cacheConfig = KnkConfig.CacheConfig.defaultConfig();
+        }
+        
+        KnkConfig knkConfig = new KnkConfig(apiConfig, cacheConfig);
         knkConfig.validate();
         
         return knkConfig;

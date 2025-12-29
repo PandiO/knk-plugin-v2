@@ -14,6 +14,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+import net.knightsandkings.knk.core.cache.DistrictCache;
+import net.knightsandkings.knk.core.cache.StructureCache;
+import net.knightsandkings.knk.core.cache.TownCache;
 import net.knightsandkings.knk.core.domain.domains.DomainRegionQuery;
 import net.knightsandkings.knk.core.domain.domains.DomainRegionSummary;
 import net.knightsandkings.knk.core.domain.structures.StructureDetail;
@@ -26,7 +29,7 @@ import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
  * Resolves WorldGuard region IDs to Knights & Kings domain entities (Town, District, Structure, etc.).
  * Acts as a mapping service between WG region names and core domain models.
  *
- * Supports optional API-backed lookup using search endpoints with lightweight caching by wgRegionId.
+ * Supports optional API-backed lookup using search endpoints with shared cache infrastructure.
  */
 public class RegionDomainResolver {
     private static final Logger LOGGER = Logger.getLogger(RegionDomainResolver.class.getName());
@@ -37,18 +40,24 @@ public class RegionDomainResolver {
     private final StructuresQueryApi structuresQueryApi;
     private final DomainsQueryApi domainsQueryApi;
     private final Duration cacheTtl;
+    
+    // Shared caches (optional - null if not using cache system)
+    private final TownCache townCache;
+    private final DistrictCache districtCache;
+    private final StructureCache structureCache;
 
+    // Local domain snapshot cache (for domain decisions, not yet in shared caches)
     private final Map<String, CachedValue<DomainSnapshot>> domainsByRegionId = new ConcurrentHashMap<>();
 
     /**
-     * In-memory only (no API) constructor.
+     * In-memory only (no API, no shared caches) constructor.
      */
     public RegionDomainResolver() {
-        this(null, null, null, null, DEFAULT_CACHE_TTL);
+        this(null, null, null, null, null, null, null);
     }
 
     /**
-     * API-enabled constructor using default cache TTL.
+     * API-enabled constructor using default cache TTL and no shared caches.
      */
     public RegionDomainResolver(
         TownsQueryApi townsQueryApi,
@@ -56,24 +65,34 @@ public class RegionDomainResolver {
         StructuresQueryApi structuresQueryApi,
         DomainsQueryApi domainsQueryApi
     ) {
-        this(townsQueryApi, districtsQueryApi, structuresQueryApi, domainsQueryApi, DEFAULT_CACHE_TTL);
+        this(townsQueryApi, districtsQueryApi, structuresQueryApi, domainsQueryApi, null, null, null);
     }
 
     /**
-     * API-enabled constructor with configurable cache TTL.
+     * API-enabled constructor with shared cache infrastructure.
+     * Recommended for production use.
      */
     public RegionDomainResolver(
         TownsQueryApi townsQueryApi,
         DistrictsQueryApi districtsQueryApi,
         StructuresQueryApi structuresQueryApi,
         DomainsQueryApi domainsQueryApi,
-        Duration cacheTtl
+        TownCache townCache,
+        DistrictCache districtCache,
+        StructureCache structureCache
     ) {
         this.townsQueryApi = townsQueryApi;
         this.districtsQueryApi = districtsQueryApi;
         this.structuresQueryApi = structuresQueryApi;
         this.domainsQueryApi = domainsQueryApi;
-        this.cacheTtl = cacheTtl == null ? DEFAULT_CACHE_TTL : cacheTtl;
+        this.cacheTtl = DEFAULT_CACHE_TTL;
+        this.townCache = townCache;
+        this.districtCache = districtCache;
+        this.structureCache = structureCache;
+        
+        if (townCache != null) {
+            LOGGER.info("[KnK Resolver] Initialized with shared cache infrastructure");
+        }
     }
 
     /**

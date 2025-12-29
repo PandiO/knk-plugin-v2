@@ -6,7 +6,8 @@ import java.time.Duration;
  * Plugin configuration loaded from config.yml.
  */
 public record KnkConfig(
-    ApiConfig api
+    ApiConfig api,
+    CacheConfig cache
 ) {
     public record ApiConfig(
         String baseUrl,
@@ -77,5 +78,30 @@ public record KnkConfig(
             throw new IllegalArgumentException("api configuration is required");
         }
         api.validate();
+        if (cache == null) {
+            throw new IllegalArgumentException("cache configuration is required");
+        }
+    }
+    
+    public record CacheConfig(
+        int ttlSeconds
+    ) {
+        /**
+         * Returns the cache TTL as a Duration.
+         *
+         * @return Cache TTL duration
+         */
+        public Duration ttl() {
+            return Duration.ofSeconds(ttlSeconds);
+        }
+        
+        /**
+         * Returns a default cache configuration.
+         *
+         * @return Default CacheConfig with 60 second TTL
+         */
+        public static CacheConfig defaultConfig() {
+            return new CacheConfig(60);
+        }
     }
 }
