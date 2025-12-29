@@ -22,15 +22,8 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
-public class DomainsQueryApiImpl implements DomainsQueryApi {
+public class DomainsQueryApiImpl extends BaseApiImpl implements DomainsQueryApi {
     private static final Logger LOGGER = Logger.getLogger(DistrictsQueryApiImpl.class.getName());
-    
-    private final String baseUrl;
-    private final OkHttpClient httpClient;
-    private final ObjectMapper objectMapper;
-    private final AuthProvider authProvider;
-    private final ExecutorService executor;
-    private final boolean debugLogging;
     
     private static final String DOMAINS_GET_BY_REGION_ID_ENDPOINT = "/Domains/by-region";
     private static final String DOMAINS_SEARCH_REGION_DECISIONS_ENDPOINT = "/Domains/search-region-decisions";
@@ -45,12 +38,7 @@ public class DomainsQueryApiImpl implements DomainsQueryApi {
         ExecutorService executor,
         boolean debugLogging
     ) {
-        this.baseUrl = baseUrl;
-        this.httpClient = httpClient;
-        this.objectMapper = objectMapper;
-        this.authProvider = authProvider;
-        this.executor = executor;
-        this.debugLogging = debugLogging;
+        super(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
 
     @Override
