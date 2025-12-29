@@ -15,11 +15,14 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import net.knightsandkings.knk.core.cache.DistrictCache;
+import net.knightsandkings.knk.core.cache.DomainCache;
 import net.knightsandkings.knk.core.cache.StructureCache;
 import net.knightsandkings.knk.core.cache.TownCache;
+import net.knightsandkings.knk.core.domain.districts.DistrictDetail;
 import net.knightsandkings.knk.core.domain.domains.DomainRegionQuery;
 import net.knightsandkings.knk.core.domain.domains.DomainRegionSummary;
 import net.knightsandkings.knk.core.domain.structures.StructureDetail;
+import net.knightsandkings.knk.core.domain.towns.TownDetail;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
@@ -48,6 +51,7 @@ public class RegionDomainResolver {
 
     // Local domain snapshot cache (for domain decisions, not yet in shared caches)
     private final Map<String, CachedValue<DomainSnapshot>> domainsByRegionId = new ConcurrentHashMap<>();
+    private final DomainCache.CacheMetrics domainCacheMetrics = new DomainCache.CacheMetrics();
 
     /**
      * In-memory only (no API, no shared caches) constructor.
@@ -240,39 +244,135 @@ public class RegionDomainResolver {
      * Get domain from cache WITHOUT triggering background refresh.
      * Used by WorldGuardRegionTracker to avoid refresh storms.
      * Returns cached value even if expired (caller decides whether to refresh).
+     * 
+     * Checks shared caches first for potentially fresher data before falling back to domain snapshots.
      */
     public Optional<DomainSnapshot> getDomainByRegionIdNoRefresh(String wgRegionId) {
+        // Check shared caches first - they may have fresher data
+        Optional<DomainSnapshot> fromSharedCache = checkSharedCaches(wgRegionId);
+        if (fromSharedCache.isPresent()) {
+            domainCacheMetrics.recordHit();
+            return fromSharedCache;
+        }
+        
+        // Fall back to local domain snapshot cache
         CachedValue<DomainSnapshot> cached = domainsByRegionId.get(wgRegionId);
         if (cached == null) {
+            domainCacheMetrics.recordMiss();
             return Optional.empty();
         }
+        
+        domainCacheMetrics.recordHit();
         return Optional.of(cached.value());
     }
 
     /**
-     * Get domain from cache. Returns empty if not cached.
+     * Get domain from cache. Returns empty if not cached or expired.
      * Does NOT trigger automatic background refresh to prevent API storms.
+     * 
+     * Checks shared caches first for potentially fresher data.
      */
     public Optional<DomainSnapshot> getDomainByRegionId(String wgRegionId) {
+        // Check shared caches first - they may have fresher data
+        Optional<DomainSnapshot> fromSharedCache = checkSharedCaches(wgRegionId);
+        if (fromSharedCache.isPresent()) {
+            LOGGER.fine("[KnK Resolver] Domain cache HIT (shared) for: " + wgRegionId);
+            domainCacheMetrics.recordHit();
+            return fromSharedCache;
+        }
+        
+        // Fall back to local domain snapshot cache
         CachedValue<DomainSnapshot> cached = domainsByRegionId.get(wgRegionId);
         if (cached == null) {
             LOGGER.fine("[KnK Resolver] Domain cache MISS for: " + wgRegionId + " (not cached)");
+            domainCacheMetrics.recordMiss();
             return Optional.empty();
         }
         
         if (cached.isExpired(cacheTtl)) {
             LOGGER.fine("[KnK Resolver] Domain cache STALE for: " + wgRegionId + " -> " + cached.value().name());
-        } else {
-            LOGGER.fine("[KnK Resolver] Domain cache HIT for: " + wgRegionId + " -> " + cached.value().name());
+            domainCacheMetrics.recordStaleHit();
+            return Optional.empty(); // Return empty for expired entries
         }
         
+        LOGGER.fine("[KnK Resolver] Domain cache HIT for: " + wgRegionId + " -> " + cached.value().name());
+        domainCacheMetrics.recordHit();
         return Optional.of(cached.value());
     }
 
     public void registerDomain(DomainSnapshot domain) {
         if (domain != null && domain.wgRegionId() != null) {
             domainsByRegionId.put(domain.wgRegionId(), new CachedValue<>(domain, Instant.now()));
+            domainCacheMetrics.recordPut();
         }
+    }
+    
+    /**
+     * Check shared caches for domain info by region ID.
+     * Converts cached detail objects back to DomainSnapshot format.
+     */
+    private Optional<DomainSnapshot> checkSharedCaches(String wgRegionId) {
+        if (wgRegionId == null) {
+            return Optional.empty();
+        }
+        
+        // Check town cache
+        if (townCache != null) {
+            Optional<TownDetail> town = townCache.getByWgRegionId(wgRegionId);
+            if (town.isPresent()) {
+                TownDetail t = town.get();
+                return Optional.of(new DomainSnapshot(
+                    t.id(), t.name(), t.description(), t.wgRegionId(),
+                    t.allowEntry(), t.allowExit(), "Town",
+                    Set.of(), // Parent IDs not available in TownDetail
+                    Set.of()
+                ));
+            }
+        }
+        
+        // Check district cache
+        if (districtCache != null) {
+            Optional<DistrictDetail> district = districtCache.getByWgRegionId(wgRegionId);
+            if (district.isPresent()) {
+                DistrictDetail d = district.get();
+                return Optional.of(new DomainSnapshot(
+                    d.id(), d.name(), d.description(), d.wgRegionId(),
+                    d.allowEntry(), d.allowExit(), "District",
+                    Set.of(), // Parent IDs not directly available
+                    Set.of()
+                ));
+            }
+        }
+        
+        // Check structure cache
+        if (structureCache != null) {
+            Optional<StructureDetail> structure = structureCache.getByWgRegionId(wgRegionId);
+            if (structure.isPresent()) {
+                StructureDetail s = structure.get();
+                return Optional.of(new DomainSnapshot(
+                    s.id(), s.name(), s.description(), s.wgRegionId(),
+                    s.allowEntry(), s.allowExit(), "Structure",
+                    Set.of(), // Parent IDs not directly available
+                    Set.of()
+                ));
+            }
+        }
+        
+        return Optional.empty();
+    }
+    
+    /**
+     * Get cache metrics for monitoring domain snapshot cache performance.
+     */
+    public DomainCache.CacheMetrics getDomainCacheMetrics() {
+        return domainCacheMetrics;
+    }
+    
+    /**
+     * Get the current size of the domain snapshot cache.
+     */
+    public int getDomainCacheSize() {
+        return domainsByRegionId.size();
     }
 
     /**

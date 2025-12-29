@@ -233,31 +233,31 @@ public class DomainCache<K, V> {
         private final AtomicLong puts = new AtomicLong(0);
         private final AtomicLong evictions = new AtomicLong(0);
 
-        void recordHit() {
+    public void recordHit() {
             hits.incrementAndGet();
         }
 
-        void recordMiss() {
+    public void recordMiss() {
             misses.incrementAndGet();
         }
 
-        void recordStaleHit() {
+    public void recordStaleHit() {
             staleHits.incrementAndGet();
         }
 
-        void recordPut() {
+    public void recordPut() {
             puts.incrementAndGet();
         }
 
-        void recordBatchPut(int count) {
+    public void recordBatchPut(int count) {
             puts.addAndGet(count);
         }
 
-        void recordEviction() {
+    public void recordEviction() {
             evictions.incrementAndGet();
         }
 
-        void recordClear(int count) {
+    public void recordClear(int count) {
             evictions.addAndGet(count);
         }
 

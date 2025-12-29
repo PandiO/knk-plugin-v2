@@ -102,6 +102,9 @@ public class KnKPlugin extends JavaPlugin {
                 cacheManager.getDistrictCache(),
                 cacheManager.getStructureCache()
             );
+            
+            // Wire resolver into cache manager for metrics tracking
+            cacheManager.setRegionResolver(regionDomainResolver);
 
             // Dedicated executor for region lookup (API prefetch); daemon threads to avoid blocking shutdown.
             regionLookupExecutor = Executors.newFixedThreadPool(

@@ -3,6 +3,7 @@ package net.knightsandkings.knk.paper.cache;
 import java.time.Duration;
 import java.util.logging.Logger;
 import net.knightsandkings.knk.core.cache.*;
+import net.knightsandkings.knk.core.regions.RegionDomainResolver;
 
 /**
  * Centralized cache lifecycle manager for the Knights & Kings plugin.
@@ -27,6 +28,7 @@ public class CacheManager {
     private final StructureCache structureCache;
 
     private final Duration cacheTtl;
+    private RegionDomainResolver regionResolver; // Optional - set after initialization
 
     /**
      * Creates a new cache manager with the specified TTL for all caches.
@@ -73,6 +75,14 @@ public class CacheManager {
     }
 
     /**
+     * Set the region resolver for tracking its cache metrics.
+     * Called after bootstrap wiring is complete.
+     */
+    public void setRegionResolver(RegionDomainResolver resolver) {
+        this.regionResolver = resolver;
+    }
+
+    /**
      * Logs cache metrics for all domain caches.
      * <p>
      * This is useful for debugging performance issues or monitoring cache effectiveness.
@@ -86,6 +96,10 @@ public class CacheManager {
             districtCache.getMetrics(), districtCache.size()));
         LOGGER.info(String.format("Structures: %s (size=%d)",
             structureCache.getMetrics(), structureCache.size()));
+                if (regionResolver != null) {
+                    LOGGER.info(String.format("Domains   : %s (size=%d)",
+                        regionResolver.getDomainCacheMetrics(), regionResolver.getDomainCacheSize()));
+                }
         LOGGER.info("===================================");
     }
 
@@ -141,6 +155,10 @@ public class CacheManager {
             districtCache.size(), districtCache.getMetrics().getHitRate()));
         sb.append(String.format("  §eStructures§r: %d entries, %d%% hit rate\n",
             structureCache.size(), structureCache.getMetrics().getHitRate()));
+                if (regionResolver != null) {
+                    sb.append(String.format("  §eDomains§r: %d entries, %d%% hit rate\n",
+                        regionResolver.getDomainCacheSize(), regionResolver.getDomainCacheMetrics().getHitRate()));
+                }
         sb.append(String.format("  §eTTL§r: %s", formatDuration(cacheTtl)));
         return sb.toString();
     }
