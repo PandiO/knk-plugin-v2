@@ -85,6 +85,10 @@ public class UsersQueryApiImpl extends BaseApiImpl implements UsersQueryApi{
                         ));
                     }
 
+                    if (response.code() == 404) {
+                        return null; // User not found
+                    }
+
                     if (!response.isSuccessful()) {
                         throw new ApiException("API request failed with status code: " + response.code());
                     }
@@ -139,6 +143,10 @@ public class UsersQueryApiImpl extends BaseApiImpl implements UsersQueryApi{
                         ));
                     }
 
+                    if (response.code() == 404) {
+                        return null; // User not found
+                    }
+
                     if (!response.isSuccessful()) {
                         throw new ApiException("API request failed with status code: " + response.code());
                     }
@@ -149,6 +157,64 @@ public class UsersQueryApiImpl extends BaseApiImpl implements UsersQueryApi{
                 }
             } catch (Exception e) {
                 throw new RuntimeException("Failed to fetch user by UUID", e);
+            }
+        }, executor);
+    }
+
+    @Override
+    public CompletableFuture<UserSummary> getByUsername(String username) {
+        return CompletableFuture.supplyAsync(() -> {
+            String url = baseUrl + USERS_ENDPOINT + "/username/" + username;
+            long startTime = System.currentTimeMillis();
+
+            try {
+                
+                // Build request
+                Request.Builder requestBuilder = new Request.Builder()
+                    .url(url)
+                    .get();
+                
+                // Add auth header if provider is configured
+                if (authProvider != null && authProvider.getAuthHeader() != null) {
+                    requestBuilder.addHeader(
+                        authProvider.getAuthHeaderName(),
+                        authProvider.getAuthHeader()
+                    );
+                }
+
+                Request request = requestBuilder.build();
+
+                // Execute request
+                try (Response response = httpClient.newCall(request).execute()) {
+                    String responseBody = response.body().string();
+
+                    if (debugLogging) {
+                        long duration = System.currentTimeMillis() - startTime;
+                        String snippet = responseBody.length() > 200
+                            ? responseBody.substring(0, 200) + "..."
+                            : responseBody;
+                        LOGGER.info(String.format(
+                            "GET %s completed in %d ms. Response: %s",
+                            url,
+                            duration,
+                            snippet
+                        ));
+                    }
+
+                    if (response.code() == 404) {
+                        return null; // User not found
+                    }
+
+                    if (!response.isSuccessful()) {
+                        throw new ApiException("API request failed with status code: " + response.code());
+                    }
+
+                    // Deserialize response
+                    UserSummaryDto userDto = objectMapper.readValue(responseBody, UserSummaryDto.class);
+                    return UsersMapper.mapUserSummary(userDto);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to fetch user by username", e);
             }
         }, executor);
     }
@@ -255,4 +321,5 @@ public class UsersQueryApiImpl extends BaseApiImpl implements UsersQueryApi{
             }
         }, executor);
     }
+
 }

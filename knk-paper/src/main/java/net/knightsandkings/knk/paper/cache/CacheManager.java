@@ -26,6 +26,7 @@ public class CacheManager {
     private final TownCache townCache;
     private final DistrictCache districtCache;
     private final StructureCache structureCache;
+    private final UserCache userCache;
 
     private final Duration cacheTtl;
     private RegionDomainResolver regionResolver; // Optional - set after initialization
@@ -43,6 +44,7 @@ public class CacheManager {
         this.townCache = new TownCache(this.cacheTtl);
         this.districtCache = new DistrictCache(this.cacheTtl);
         this.structureCache = new StructureCache(this.cacheTtl);
+        this.userCache = new UserCache(this.cacheTtl);
 
         LOGGER.info("Cache manager initialized successfully");
     }
@@ -75,6 +77,15 @@ public class CacheManager {
     }
 
     /**
+     * Returns the user cache instance.
+     *
+     * @return UserCache
+     */
+    public UserCache getUserCache() {
+        return userCache;
+    }
+
+    /**
      * Set the region resolver for tracking its cache metrics.
      * Called after bootstrap wiring is complete.
      */
@@ -96,6 +107,8 @@ public class CacheManager {
             districtCache.getMetrics(), districtCache.size()));
         LOGGER.info(String.format("Structures: %s (size=%d)",
             structureCache.getMetrics(), structureCache.size()));
+        LOGGER.info(String.format("Users     : %s (size=%d)",
+            userCache.getMetrics(), userCache.size()));
                 if (regionResolver != null) {
                     LOGGER.info(String.format("Domains   : %s (size=%d)",
                         regionResolver.getDomainCacheMetrics(), regionResolver.getDomainCacheSize()));
@@ -119,6 +132,7 @@ public class CacheManager {
         townCache.clear();
         districtCache.clear();
         structureCache.clear();
+        userCache.clear();
 
         LOGGER.info("All caches cleared");
     }
@@ -135,6 +149,7 @@ public class CacheManager {
         townCache.getMetrics().reset();
         districtCache.getMetrics().reset();
         structureCache.getMetrics().reset();
+        userCache.getMetrics().reset();
 
         LOGGER.info("Cache metrics reset");
     }
@@ -155,6 +170,8 @@ public class CacheManager {
             districtCache.size(), districtCache.getMetrics().getHitRate()));
         sb.append(String.format("  §eStructures§r: %d entries, %d%% hit rate\n",
             structureCache.size(), structureCache.getMetrics().getHitRate()));
+        sb.append(String.format("  §eUsers§r: %d entries, %d%% hit rate\n",
+            userCache.size(), userCache.getMetrics().getHitRate()));
                 if (regionResolver != null) {
                     sb.append(String.format("  §eDomains§r: %d entries, %d%% hit rate\n",
                         regionResolver.getDomainCacheSize(), regionResolver.getDomainCacheMetrics().getHitRate()));

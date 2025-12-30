@@ -217,7 +217,13 @@ public class SimpleRegionTransitionService implements RegionTransitionService {
         // Entering a new district in the same town
         if (enteredDistrict.isPresent()) {
             DomainSnapshot district = enteredDistrict.get();
-            return RegionTransitionDecision.allow(RegionTransitionType.ENTER, "You are now entering " + district.name() + ".");
+            String message = "You are now entering " + district.name();
+            if (district.parentDomainNames() != null && !district.parentDomainNames().isEmpty()) {
+                message += " * " + district.parentDomainNames().iterator().next() + " *";
+            } else {
+                message += ".";
+            }
+            return RegionTransitionDecision.allow(RegionTransitionType.ENTER, message);
         }
 
         // Leaving a district in the same town

@@ -12,6 +12,8 @@ import net.knightsandkings.knk.api.impl.DistrictsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.StreetsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.StructuresQueryApiImpl;
 import net.knightsandkings.knk.api.impl.DomainsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.UsersQueryApiImpl;
+import net.knightsandkings.knk.api.impl.UsersCommandApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -19,6 +21,8 @@ import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
+import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
+import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;
@@ -46,6 +50,8 @@ public class KnkApiClient {
     private final StreetsQueryApi streetsQueryApi;
     private final StructuresQueryApi structuresQueryApi;
     private final DomainsQueryApi domainsQueryApi;
+    private final UsersQueryApi usersQueryApi;
+    private final UsersCommandApi usersCommandApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -69,6 +75,8 @@ public class KnkApiClient {
         this.streetsQueryApi = new StreetsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.structuresQueryApi = new StructuresQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.domainsQueryApi = new DomainsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.usersQueryApi = new UsersQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.usersCommandApi = new UsersCommandApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -97,6 +105,14 @@ public class KnkApiClient {
 
     public DomainsQueryApi getDomainsQueryApi() {
         return domainsQueryApi;
+    }
+
+    public UsersQueryApi getUsersQueryApi() {
+        return usersQueryApi;
+    }
+
+    public UsersCommandApi getUsersCommandApi() {
+        return usersCommandApi;
     }
     
     /**

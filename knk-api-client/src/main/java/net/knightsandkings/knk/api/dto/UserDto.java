@@ -11,7 +11,7 @@ public record UserDto (
     java.util.UUID uuid,
     @JsonProperty("email")
     String email,
-    @JsonProperty("cash")
+    @JsonProperty("coins")
     Integer coins,
     @JsonProperty("createdAt")
     java.util.Date createdAt

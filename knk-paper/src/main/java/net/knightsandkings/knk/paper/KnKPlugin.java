@@ -1,34 +1,37 @@
 package net.knightsandkings.knk.paper;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.logging.Logger;
+
+import org.bukkit.command.PluginCommand;
+import org.bukkit.plugin.java.JavaPlugin;
+
 import net.knightsandkings.knk.api.auth.ApiKeyAuthProvider;
 import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
+import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
+import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
+import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
+import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
+import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
+import net.knightsandkings.knk.core.ports.gates.GateControlPort;
+import net.knightsandkings.knk.core.regions.RegionDomainResolver;
+import net.knightsandkings.knk.core.regions.RegionTransitionService;
+import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
+import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
-import net.knightsandkings.knk.paper.cache.CacheManager;
-import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
-import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
-import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
-import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
-import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
-import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
-import net.knightsandkings.knk.core.regions.RegionTransitionService;
-import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
+import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
-import net.knightsandkings.knk.core.regions.RegionDomainResolver;
-import net.knightsandkings.knk.core.ports.gates.GateControlPort;
-import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
-import org.bukkit.command.PluginCommand;
-import org.bukkit.plugin.java.JavaPlugin;
-
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.logging.Logger;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
@@ -40,6 +43,8 @@ public class KnKPlugin extends JavaPlugin {
     private StreetsQueryApi streetsQueryApi;
     private StructuresQueryApi structuresQueryApi;
     private DomainsQueryApi domainsQueryApi;
+    private UsersQueryApi usersQueryApi;
+    private UsersCommandApi usersCommandApi;
     private ExecutorService regionLookupExecutor;
     
     @Override
@@ -77,12 +82,16 @@ public class KnKPlugin extends JavaPlugin {
             this.streetsQueryApi = apiClient.getStreetsQueryApi();
             this.structuresQueryApi = apiClient.getStructuresQueryApi();
             this.domainsQueryApi = apiClient.getDomainsQueryApi();
+            this.usersQueryApi = apiClient.getUsersQueryApi();
+            this.usersCommandApi = apiClient.getUsersCommandApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
             getLogger().info("DistrictsQueryApi wired from API client");
             getLogger().info("StreetsQueryApi wired from API client");
             getLogger().info("StructuresQueryApi wired from API client");
             getLogger().info("DomainsQueryApi wired from API client");
+            getLogger().info("UsersQueryApi wired from API client");
+            getLogger().info("UsersCommandApi wired from API client");
             
             // Initialize cache manager
             this.cacheManager = new CacheManager(config.cache().ttl());
@@ -167,7 +176,7 @@ public class KnKPlugin extends JavaPlugin {
         // Event registration moved to onEnable after region transition service setup
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
-        pluginManager.registerEvents(new PlayerListener(), this);
+        pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, cacheManager.getUserCache()), this);
     }
     
     /**

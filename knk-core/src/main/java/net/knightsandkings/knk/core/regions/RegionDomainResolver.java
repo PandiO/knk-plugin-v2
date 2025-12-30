@@ -236,7 +236,13 @@ public class RegionDomainResolver {
                     .map(DomainRegionSummary::id)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet()),
-            Set.of() // Child domain IDs can be populated later if needed
+            summary.parentDomainDecisions() == null ? Set.of() :
+                summary.parentDomainDecisions().stream()
+                    .map(DomainRegionSummary::name)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet()),
+            Set.of(),
+            Set.of()
         ));
     }
 
@@ -325,6 +331,8 @@ public class RegionDomainResolver {
                     t.id(), t.name(), t.description(), t.wgRegionId(),
                     t.allowEntry(), t.allowExit(), "Town",
                     Set.of(), // Parent IDs not available in TownDetail
+                    Set.of(),
+                    Set.of(), // Child IDs not available in TownDetail
                     Set.of()
                 ));
             }
@@ -339,6 +347,8 @@ public class RegionDomainResolver {
                     d.id(), d.name(), d.description(), d.wgRegionId(),
                     d.allowEntry(), d.allowExit(), "District",
                     Set.of(), // Parent IDs not directly available
+                    Set.of(),
+                    Set.of(), // Child IDs not directly available
                     Set.of()
                 ));
             }
@@ -353,6 +363,8 @@ public class RegionDomainResolver {
                     s.id(), s.name(), s.description(), s.wgRegionId(),
                     s.allowEntry(), s.allowExit(), "Structure",
                     Set.of(), // Parent IDs not directly available
+                    Set.of(),
+                    Set.of(), // Child IDs not directly available
                     Set.of()
                 ));
             }
@@ -565,7 +577,9 @@ public class RegionDomainResolver {
         Boolean allowExit,
         String domainType,
         Set<Integer> parentDomainIds,
-        Set<Integer> childDomainIds
+        Set<String> parentDomainNames,
+        Set<Integer> childDomainIds,
+        Set<String> childDomainNames
     ) {}
 
     public record StructureSnapshot(

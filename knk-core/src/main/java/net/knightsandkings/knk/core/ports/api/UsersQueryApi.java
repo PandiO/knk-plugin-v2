@@ -12,5 +12,6 @@ import net.knightsandkings.knk.core.domain.users.UserSummary;
 public interface UsersQueryApi {
     CompletableFuture<UserDetail> getById(int id);
     CompletableFuture<UserSummary> getByUuid(UUID uuid);
+    CompletableFuture<UserSummary> getByUsername(String username);
     CompletableFuture<Page<UserListItem>> search(PagedQuery query);
 }
