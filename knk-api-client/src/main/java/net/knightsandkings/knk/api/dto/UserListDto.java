@@ -7,6 +7,6 @@ public record UserListDto (
     @JsonProperty("username") String username,
     @JsonProperty("uuid") java.util.UUID uuid,
     @JsonProperty("email") String email,
-    @JsonProperty("cash") Integer coins
+    @JsonProperty("coins") Integer coins
 ) {
 }

@@ -14,6 +14,7 @@ import net.knightsandkings.knk.api.impl.StructuresQueryApiImpl;
 import net.knightsandkings.knk.api.impl.DomainsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.UsersQueryApiImpl;
 import net.knightsandkings.knk.api.impl.UsersCommandApiImpl;
+import net.knightsandkings.knk.api.impl.WorldTasksApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -23,6 +24,7 @@ import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
+import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;
@@ -52,6 +54,7 @@ public class KnkApiClient {
     private final DomainsQueryApi domainsQueryApi;
     private final UsersQueryApi usersQueryApi;
     private final UsersCommandApi usersCommandApi;
+    private final WorldTasksApi worldTasksApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -77,6 +80,7 @@ public class KnkApiClient {
         this.domainsQueryApi = new DomainsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.usersQueryApi = new UsersQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.usersCommandApi = new UsersCommandApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.worldTasksApi = new WorldTasksApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -113,6 +117,10 @@ public class KnkApiClient {
 
     public UsersCommandApi getUsersCommandApi() {
         return usersCommandApi;
+    }
+    
+    public WorldTasksApi getWorldTasksApi() {
+        return worldTasksApi;
     }
     
     /**

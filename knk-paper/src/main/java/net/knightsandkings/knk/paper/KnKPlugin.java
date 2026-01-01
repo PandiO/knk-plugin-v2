@@ -20,16 +20,20 @@ import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
+import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.ports.gates.GateControlPort;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
+import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
+import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
+import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 
@@ -45,6 +49,8 @@ public class KnKPlugin extends JavaPlugin {
     private DomainsQueryApi domainsQueryApi;
     private UsersQueryApi usersQueryApi;
     private UsersCommandApi usersCommandApi;
+    private WorldTasksApi worldTasksApi;
+    private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private ExecutorService regionLookupExecutor;
     
     @Override
@@ -84,6 +90,7 @@ public class KnKPlugin extends JavaPlugin {
             this.domainsQueryApi = apiClient.getDomainsQueryApi();
             this.usersQueryApi = apiClient.getUsersQueryApi();
             this.usersCommandApi = apiClient.getUsersCommandApi();
+            this.worldTasksApi = apiClient.getWorldTasksApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
             getLogger().info("DistrictsQueryApi wired from API client");
@@ -92,6 +99,16 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("DomainsQueryApi wired from API client");
             getLogger().info("UsersQueryApi wired from API client");
             getLogger().info("UsersCommandApi wired from API client");
+            getLogger().info("WorldTasksApi wired from API client");
+            
+            // Initialize WorldTask handler registry and register handlers
+            this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
+            
+            // Register WgRegionId handler
+            WgRegionIdTaskHandler wgRegionIdHandler = new WgRegionIdTaskHandler(worldTasksApi, this);
+            worldTaskHandlerRegistry.registerHandler(wgRegionIdHandler);
+            
+            getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
             // Initialize cache manager
             this.cacheManager = new CacheManager(config.cache().ttl());
@@ -141,6 +158,17 @@ public class KnKPlugin extends JavaPlugin {
                 true  // Enable console logging; set to false to disable
             );
             registerEvents(regionTracker);
+            
+            // Register task event listeners (wired after handler registration)
+            var retrievedWgRegionHandler = (WgRegionIdTaskHandler) 
+                worldTaskHandlerRegistry.getHandler("WgRegionId").orElse(null);
+            if (retrievedWgRegionHandler != null) {
+                getServer().getPluginManager().registerEvents(
+                    new RegionTaskEventListener(retrievedWgRegionHandler),
+                    this
+                );
+                getLogger().info("Registered RegionTaskEventListener for WgRegionId handler");
+            }
             
             getLogger().info("Region transition service initialized with domain resolver and gate control");
 
@@ -193,7 +221,20 @@ public class KnKPlugin extends JavaPlugin {
     private void registerCommands() {
         PluginCommand knkCommand = getCommand("knk");
         if (knkCommand != null) {
-            knkCommand.setExecutor(new KnkAdminCommand(this, apiClient.getHealthApi(), townsQueryApi, locationsQueryApi, districtsQueryApi, streetsQueryApi, cacheManager));
+            // Use "localhost" as default serverId; TODO: make this configurable
+            String serverId = "localhost";
+            knkCommand.setExecutor(new KnkAdminCommand(
+                this, 
+                apiClient.getHealthApi(), 
+                townsQueryApi, 
+                locationsQueryApi, 
+                districtsQueryApi, 
+                streetsQueryApi, 
+                cacheManager,
+                worldTasksApi,
+                worldTaskHandlerRegistry,
+                serverId
+            ));
             getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");

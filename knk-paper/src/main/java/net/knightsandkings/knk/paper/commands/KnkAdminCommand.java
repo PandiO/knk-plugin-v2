@@ -5,6 +5,8 @@ import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
+import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -23,7 +25,18 @@ public class KnkAdminCommand implements CommandExecutor {
     private final CommandRegistry registry = new CommandRegistry();
     private final HelpSubcommand helpSubcommand;
 
-    public KnkAdminCommand(Plugin plugin, HealthApi healthApi, TownsQueryApi townsApi, LocationsQueryApi locationsApi, DistrictsQueryApi districtsApi, StreetsQueryApi streetsApi, CacheManager cacheManager) {
+    public KnkAdminCommand(
+            Plugin plugin, 
+            HealthApi healthApi, 
+            TownsQueryApi townsApi, 
+            LocationsQueryApi locationsApi, 
+            DistrictsQueryApi districtsApi, 
+            StreetsQueryApi streetsApi, 
+            CacheManager cacheManager,
+            WorldTasksApi worldTasksApi,
+            WorldTaskHandlerRegistry worldTaskHandlerRegistry,
+            String serverId
+    ) {
         this.helpSubcommand = new HelpSubcommand(registry);
         
         // Register health
@@ -128,6 +141,28 @@ public class KnkAdminCommand implements CommandExecutor {
                     System.arraycopy(args, 0, adjusted, 1, args.length);
                     return streetsCommand.onCommand(sender, null, "knk", adjusted);
                 }
+        );
+        
+        // Register task commands
+        KnkTaskListCommand taskListCommand = new KnkTaskListCommand(plugin, worldTasksApi);
+        registry.register(
+                new CommandMetadata("tasks", "List world tasks by status", "/knk tasks [status]", "knk.tasks",
+                        List.of("/knk tasks", "/knk tasks Pending", "/knk tasks Claimed")),
+                (sender, args) -> taskListCommand.onCommand(sender, null, "knk", args)
+        );
+        
+        KnkTaskClaimCommand taskClaimCommand = new KnkTaskClaimCommand(plugin, worldTasksApi, worldTaskHandlerRegistry, serverId);
+        registry.register(
+                new CommandMetadata("task-claim", "Claim a world task", "/knk task-claim <id|linkCode>", "knk.tasks",
+                        List.of("/knk task-claim 1", "/knk task-claim ABC123")),
+                (sender, args) -> taskClaimCommand.onCommand(sender, null, "knk", args)
+        );
+        
+        KnkTaskStatusCommand taskStatusCommand = new KnkTaskStatusCommand(plugin, worldTasksApi);
+        registry.register(
+                new CommandMetadata("task-status", "Check world task status", "/knk task-status <id|linkCode>", "knk.tasks",
+                        List.of("/knk task-status 1", "/knk task-status ABC123")),
+                (sender, args) -> taskStatusCommand.onCommand(sender, null, "knk", args)
         );
         
         // Register help
