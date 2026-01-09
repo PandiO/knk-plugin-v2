@@ -212,7 +212,7 @@ public class KnKPlugin extends JavaPlugin {
         // Event registration moved to onEnable after region transition service setup
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
-        pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, cacheManager.getUserCache()), this);
+        pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, this.getCacheManager()), this);
     }
     
     /**

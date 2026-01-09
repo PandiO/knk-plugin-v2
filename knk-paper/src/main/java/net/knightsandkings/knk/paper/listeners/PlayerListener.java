@@ -25,11 +25,11 @@ public class PlayerListener implements Listener {
 
 	private final UsersQueryApi usersQueryApi;
 	private final UsersCommandApi usersCommandApi;
-	private final UserCache userCache;
+	private final CacheManager cacheManager;
 
-	public PlayerListener(UsersQueryApi usersQueryApi, UsersCommandApi usersCommandApi, UserCache userCache) {
+	public PlayerListener(UsersQueryApi usersQueryApi, UsersCommandApi usersCommandApi, CacheManager cacheManager) {
 		this.usersQueryApi = usersQueryApi;
-		this.userCache = userCache;
+		this.cacheManager = cacheManager;
 		this.usersCommandApi = usersCommandApi;
 	}
 
@@ -101,6 +101,93 @@ public class PlayerListener implements Listener {
 			// }
             player.teleport(Bukkit.getWorld(Bukkit.getWorlds().get(0).getName()).getSpawnLocation());
 		}
-		// ScoreboardUtil.setScoreboard(Arrays.asList(user));
+		ScoreboardUtil.setScoreboard(Arrays.asList(player));
+	}
+
+	@EventHandler
+	public void onLeave(PlayerQuitEvent e) {
+		Player player = e.getPlayer();
+		e.setQuitMessage(Component.text(ColorOptions.messageArrow + "Player " + player.getName() + " left").color(ColorOptions.message));
+	}
+
+	@EventHandler
+	public void onCommand(PlayerCommandPreprocessEvent) {
+		String cmd = e.getMessage();
+		if (cmd.equalsIgnoreCase("/help")
+				|| cmd.equalsIgnoreCase("/plugins")
+				|| cmd.equalsIgnoreCase("/pl")
+				|| cmd.equalsIgnoreCase("/plugin")
+				|| cmd.equalsIgnoreCase("/v")
+				|| cmd.equalsIgnoreCase("/version")) {
+			if (!player.hasPermission("k&k.owner")) {
+				e.setCancelled(true);
+			}
+		}
+	}
+
+	@EventHandler(priority = EventPriority.NORMAL)
+	public void onChat(PlayerChatEvent e) {
+		Player player = e.getPlayer();
+
+		String message = e.getMessage();
+		String dn = player.getName();
+		String rawMSG = ("" + e.getMessage().charAt(0)).toUpperCase() + e.getMessage().substring(1);
+		message = ChatColor.translateAlternateColorCodes('&', rawMSG);
+		if (player.hasPermission("k&k.owner")) {
+			e.setFormat(ColorOptions.ownerformat + "[" + ColorOptions.ownersubjects + "OWNER" + ColorOptions.ownerformat + "]"
+//					+ "-{" + ColorOptions.ownersubjects + "" + ChatColor.BOLD + user.getTitleName() + ColorOptions.ownerformat + "}-"
+							+ " " + ColorOptions.ownersubjects + dn + ColorOptions.message + ": " + ChatColor.WHITE + message);
+		} else {
+			message = rawMSG;
+			e.setFormat(ColorOptions.defaultformat + ""
+//					+ "-{" + ColorOptions.defaultsubjects + user.getTitleName() + ColorOptions.defaultformat + "}-"
+							+ " " + ColorOptions.defaultsubjects + dn + ColorOptions.message + ": " + ChatColor.WHITE + message);
+		}
+
+		/**
+		 * Player mention
+		 */
+		new BukkitRunnable() {
+			@Override
+			public void run() {
+				for (Player p : Bukkit.getOnlinePlayers()) {
+					if (message.toLowerCase().contains(p.getName.toLowerCase())) {
+						p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0F, 1.0F);
+					}
+				}
+			}
+		}.runTaskAsynchronously(KnKPlugin.getPlugin());
+	}
+
+	@EventHandler
+	public void onPlayerDeath(PlayerDeathEvent e) {
+		Player player = e.getEntity();
+		Player killer = player.getKiller();
+		player.sendMessage(Component.text("You died").color(ColorOptions.message));
+	}
+
+	@EventHandler
+	public void onPlayerRespawn(PlayerRespawnEvent e) {
+		Player player = e.getPlayer();
+		/**
+		 * TODO Should be replaced by a more safe way to fetch the default town.
+		 * Even better would be to load default values for spawn locations and other default settings from the DB and store them in a local yml file.
+		 * This would ensure the server can still function in a safe-mode state when the connection with the Api fails.
+		 */
+		Town town = this.cacheManager.getTownCache().getById(4).orElse(null);
+		if (town == null) {
+			LOGGER.severe("Failed to load default town to respawn player at.");
+			e.setRespawnLocation(Bukkit.getCurrentSpawnpoint().getLocation());
+			return;
+		}
+		/*
+		* TODO Implement logic to retrieve Bukkit Location from KnK location entity to set respawn location.
+		*/
+		e.setRespawnLocation()
+	}
+
+	@EventHandler
+	public void onItemPickup(PlayerPickupItemEvent e) {
+		e.setCancelled(true);
 	}
 }
