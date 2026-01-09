@@ -48,6 +48,7 @@ All domain concepts are grounded in actual source code. TBD sections identify ga
 **Confirmed Fields (v2 - Dual Currency):**
 - `coins: Integer` (primary in-game currency; tied to real money/premium; default 250; non-negative; stored as INT)
 - `gems: Integer` (secondary in-game currency; alt economy or free-to-play; default 50; non-negative; stored as INT)
+- `experiencePoints: Integer` (player progression XP; default 0; non-negative; stored as INT)
 
 Note: Legacy system used single `cash` field (default 100). v2 splits into Coins (premium) and Gems (free).
 
@@ -60,6 +61,8 @@ Note: Legacy system used single `cash` field (default 100). v2 splits into Coins
 - `setGems(int): void` – set gem balance
 - `addGems(int): void` – increment gems
 - `removeGems(int): void` – decrement gems, with floor at 0
+- `getExperiencePoints(): Integer` – retrieve XP
+- `addExperiencePoints(int): void` – increment XP (non-negative result)
 
 **Use-Cases:**
 - Track primary premium currency (tied to real-money purchases)
@@ -68,9 +71,9 @@ Note: Legacy system used single `cash` field (default 100). v2 splits into Coins
 - Display balance in UI/menus/web app
 - Enforce payment constraints
 
-**⚠️ CRITICAL: Banking-Grade Currency Handling**
+**⚠️ CRITICAL: Banking-Grade Balance Handling (Coins, Gems, ExperiencePoints)**
 
-Currency balance updates (especially Coins, tied to real money) **MUST** implement:
+Balance updates for Coins, Gems, and ExperiencePoints **MUST** implement:
 
 1. **Optimistic Locking**: Use version/timestamp field to detect concurrent modifications
    ```
@@ -86,7 +89,7 @@ Currency balance updates (especially Coins, tied to real money) **MUST** impleme
    - Reason/transaction type (purchase, refund, reward, etc.)
    - Initiator (player, system, admin)
 
-3. **Atomic Transactions**: All currency operations must be ACID-compliant; no partial updates
+3. **Atomic Transactions**: All balance operations must be ACID-compliant; no partial updates
 
 4. **Rollback Capability**: Failed transactions must restore previous balance; maintain transaction history
 
@@ -94,15 +97,15 @@ Currency balance updates (especially Coins, tied to real money) **MUST** impleme
 
 6. **Reconciliation**: Daily/weekly reconciliation against transaction audit trail
 
-7. **No Direct Setter**: Coins/Gems should be updated only through service methods (AddCoins, RemoveCoins, etc.), never direct property assignment
+7. **No Direct Setter**: Coins/Gems/ExperiencePoints should be updated only through service methods (Add*/Remove*/AddExperiencePoints), never direct property assignment
 
 **Business Rules:**
-- Balance cannot go negative; attempts to remove more than available must fail (return error, not clamp)
+- Balance cannot go negative for Coins, Gems, or ExperiencePoints; attempts to remove more than available must fail (return error, not clamp)
 - Starting coins on account creation: 250
 - Starting gems on account creation: 50
-- All coin operations require reason/transaction type
-- Coin transactions must be logged to separate audit table
-- Gem transactions should also be logged (less critical than coins)
+- Starting experiencePoints on account creation: 0
+- All coin/gem/XP operations require reason/transaction type
+- Coin transactions must be logged to separate audit table; Gems and ExperiencePoints should also be logged (XP logging can be lighter but must retain audit trail)
 - Concurrent updates must be serialized (no race conditions)
 - Large coin changes (>1000) may require approval/logging at INFO level
 

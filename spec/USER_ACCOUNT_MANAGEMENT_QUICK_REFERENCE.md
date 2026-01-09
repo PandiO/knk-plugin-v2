@@ -15,6 +15,7 @@
 | **Delete Strategy** | • **Soft delete** (IsActive = false)<br>• TTL: 90 days before hard delete<br>• Track: DeletedAt, DeletedReason, ArchiveUntil |
 | **Audit Trail** | • **Minimal** (no separate audit table for MVP)<br>• Track in User model:<br>&nbsp;&nbsp;- LastPasswordChangeAt<br>&nbsp;&nbsp;- LastEmailChangeAt<br>&nbsp;&nbsp;- DeletedAt<br>&nbsp;&nbsp;- DeletedReason |
 | **Foreign Keys** | • Currently: **None**<br>• Merge is straightforward<br>• Future: soft delete allows recovery if FK added |
+| **Balances (Coins/Gems/XP)** | • No negative balances; reject underflows<br>• Mutations are atomic/serialized via service methods only<br>• Each change requires reason/type and is logged (Coins full audit; Gems/XP lighter but recoverable) |
 
 ---
 
@@ -40,6 +41,10 @@ public DateTime? DeletedAt { get; set; }
 public string? DeletedReason { get; set; }
 public DateTime? ArchiveUntil { get; set; }  // DeletedAt + 90 days
 ```
+
+// Balances (Coins, Gems, ExperiencePoints) stay in the model
+// Mutation rules: service methods only, atomic/serialized; reject underflows
+// Logging: Coins require audit log; Gems/XP logged with lighter metadata but still recoverable
 
 ### Enums
 

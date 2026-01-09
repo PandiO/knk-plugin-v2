@@ -23,6 +23,7 @@ This document provides a step-by-step implementation plan organized by component
 - [ ] Add `ArchiveUntil: DateTime?` property (TTL for soft-deleted records; 90-day default)
 - [ ] Create `AccountCreationMethod` enum (WebApp = 0, MinecraftServer = 1)
 - [ ] Add unique constraint annotations on Username, Email, Uuid
+- [ ] Keep existing balances (Coins, Gems, ExperiencePoints) and document invariants: non-negative, service-only updates, audited mutations
 - [ ] Add XML documentation
 
 **File**: `Models/User.cs`
@@ -274,6 +275,10 @@ Task ChangePasswordAsync(int userId, string currentPassword, string newPassword,
 Task<bool> VerifyPasswordAsync(string plainPassword, string? passwordHash);
 Task UpdateEmailAsync(int userId, string newEmail, string? currentPassword = null);
 
+// Balances (Coins, Gems, ExperiencePoints)
+// All mutations must be atomic, reject underflows, and record reason/context for audit
+Task AdjustBalancesAsync(int userId, int coinsDelta, int gemsDelta, int experienceDelta, string reason, string? metadata = null);
+
 // Link codes
 Task<LinkCodeResponseDto> GenerateLinkCodeAsync(int? userId);
 Task<(bool IsValid, UserDto? User)> ConsumeLinkCodeAsync(string code);
@@ -307,6 +312,10 @@ Update `Services/UserService.cs`:
   - ChangePasswordAsync
   - VerifyPasswordAsync
   - UpdateEmailAsync
+
+- [ ] Implement balance mutation method
+  - AdjustBalancesAsync (Coins/Gems/ExperiencePoints): atomic, serialized, reject underflows, log reason/metadata
+  - Ensure audit trail entries are created for Coins; log Gems/XP with lighter metadata but still recoverable
   
 - [ ] Implement link code delegation methods
   - GenerateLinkCodeAsync (delegate to LinkCodeService)

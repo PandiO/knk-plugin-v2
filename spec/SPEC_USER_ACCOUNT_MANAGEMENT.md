@@ -155,6 +155,13 @@ The existing `User` model must support:
 - `ExperiencePoints: int`
 - `CreatedAt: DateTime`
 
+**Balance Mutation Rules (Coins, Gems, ExperiencePoints)**:
+- No negative balances; operations that would underflow must fail (do not clamp)
+- Mutations must be atomic and serialized to prevent race conditions
+- Each mutation requires a reason/type; record metadata for auditability
+- Coins must be logged to an audit trail; Gems and ExperiencePoints must also be logged (lighter logging acceptable for XP but still recoverable)
+- No direct property setters in application code; updates go through service methods that enforce validation and logging
+
 #### LinkCode Entity (New)
 
 ```csharp
