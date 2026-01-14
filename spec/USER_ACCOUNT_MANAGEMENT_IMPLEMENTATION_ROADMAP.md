@@ -137,36 +137,37 @@ Implement all methods from 1.4 in UserRepository:
 ## Phase 2: DTOs & Mapping (API Contract Layer)
 
 ### Priority: HIGH - Needed for service layer
+### Status: ✅ COMPLETE (January 11, 2026)
 
 #### 2.1 Create/Update User DTOs
 Update `Dtos/UserDtos.cs`:
 
-- [ ] Update `UserCreateDto`:
+- [x] Update `UserCreateDto`:
   - Add `string? Uuid` (optional)
   - Add `string? Password` (optional)
   - Add `string? PasswordConfirmation` (optional)
   - Add `string? LinkCode` (optional for linking existing account)
   - Make Email optional
   
-- [ ] Create `UserUpdateDto`:
+- [x] Create `UserUpdateDto`:
   - `string? Email`
   - `string? NewPassword`
   - `string NewPasswordConfirmation`
   - `string? CurrentPassword`
   
-- [ ] Create `ChangePasswordDto`:
+- [x] Create `ChangePasswordDto`:
   - `string CurrentPassword`
   - `string NewPassword`
   - `string PasswordConfirmation`
   
-- [ ] Create `UpdateEmailDto`:
+- [x] Create `UpdateEmailDto`:
   - `string NewEmail`
   - `string? CurrentPassword` (for security)
   
-- [ ] Update `UserDto`: Add `Gems`, `ExperiencePoints`, `EmailVerified`, `AccountCreatedVia`
-- [ ] Update `UserSummaryDto`: Add `Gems`, `ExperiencePoints`
-- [ ] Create `AccountMergeResultDto`: User with merge metadata
-- [ ] Ensure no PasswordHash in any DTO response
+- [x] Update `UserDto`: Add `Gems`, `ExperiencePoints`, `EmailVerified`, `AccountCreatedVia`
+- [x] Update `UserSummaryDto`: Add `Gems`, `ExperiencePoints`
+- [x] Create `AccountMergeResultDto`: User with merge metadata
+- [x] Ensure no PasswordHash in any DTO response
 
 **File**: `Dtos/UserDtos.cs`
 
@@ -177,13 +178,13 @@ Update `Dtos/UserDtos.cs`:
 #### 2.2 Create LinkCode & Auth DTOs
 Create `Dtos/LinkCodeDtos.cs`:
 
-- [ ] `LinkCodeResponseDto`: { code, expiresAt }
-- [ ] `LinkCodeRequestDto`: { userId }
-- [ ] `ValidateLinkCodeResponseDto`: { isValid, userId, username, email, error }
-- [ ] `DuplicateCheckDto`: { uuid, username }
-- [ ] `DuplicateCheckResponseDto`: { hasDuplicate, conflictingUser?, primaryUser?, message }
-- [ ] `AccountMergeDto`: { primaryUserId, secondaryUserId }
-- [ ] `LinkAccountDto`: { linkCode, email, password, passwordConfirmation }
+- [x] `LinkCodeResponseDto`: { code, expiresAt }
+- [x] `LinkCodeRequestDto`: { userId }
+- [x] `ValidateLinkCodeResponseDto`: { isValid, userId, username, email, error }
+- [x] `DuplicateCheckDto`: { uuid, username }
+- [x] `DuplicateCheckResponseDto`: { hasDuplicate, conflictingUser?, primaryUser?, message }
+- [x] `AccountMergeDto`: { primaryUserId, secondaryUserId }
+- [x] `LinkAccountDto`: { linkCode, email, password, passwordConfirmation }
 
 **File**: `Dtos/LinkCodeDtos.cs` (new)
 
@@ -195,12 +196,12 @@ Create `Dtos/LinkCodeDtos.cs`:
 
 Update `Mapping/UserMappingProfile.cs`:
 
-- [ ] `User → UserDto`: Add Gems, ExperiencePoints, EmailVerified mapping; exclude PasswordHash (Ignore)
-- [ ] `UserDto → User`: Exclude PasswordHash from reverse mapping
-- [ ] `User → UserSummaryDto`: Add Gems, ExperiencePoints
-- [ ] `LinkCode → LinkCodeResponseDto`: Map Code, ExpiresAt
-- [ ] Add mapping for merge/conflict scenarios
-- [ ] Add validation that PasswordHash is never exposed
+- [x] `User → UserDto`: Add Gems, ExperiencePoints, EmailVerified mapping; exclude PasswordHash (Ignore)
+- [x] `UserDto → User`: Exclude PasswordHash from reverse mapping
+- [x] `User → UserSummaryDto`: Add Gems, ExperiencePoints
+- [x] `LinkCode → LinkCodeResponseDto`: Map Code, ExpiresAt
+- [x] Add mapping for merge/conflict scenarios
+- [x] Add validation that PasswordHash is never exposed
 
 **File**: `Mapping/UserMappingProfile.cs`
 
@@ -209,51 +210,55 @@ Update `Mapping/UserMappingProfile.cs`:
 ---
 
 ### Phase 2 Summary
-- **Total Effort**: ~3 hours
+- **Total Effort**: ~3 hours | **Actual Effort**: ~1 hour
 - **Risk**: Low (straightforward DTO creation)
 - **Dependencies**: Phase 1 (entities must exist first)
+- **Status**: ✅ COMPLETE
+- **Build Status**: SUCCESS (0 new errors/warnings)
 
 ---
 
 ## Phase 3: Service Layer (Business Logic)
 
 ### Priority: HIGH - Core logic sits here
+### Status: ✅ COMPLETE (January 13, 2026)
 
 #### 3.1 Create Password Utility / Service
 Create `Services/PasswordService.cs` or utility class:
 
-- [ ] `HashPasswordAsync(string password) → string` (bcrypt with 10-12 rounds)
-- [ ] `VerifyPasswordAsync(string plainPassword, string hash) → bool`
-- [ ] `ValidatePasswordAsync(string password) → (bool isValid, string? error)`
+- [x] `HashPasswordAsync(string password) → string` (bcrypt with 10-12 rounds)
+- [x] `VerifyPasswordAsync(string plainPassword, string hash) → bool`
+- [x] `ValidatePasswordAsync(string password) → (bool isValid, string? error)`
   - Min: 8 chars, Max: 128 chars
   - No forced complexity
   - Blacklist top 1000 compromised passwords + common patterns
-- [ ] Add NuGet: `BCrypt.Net-Next` (install if not present)
-- [ ] Externalize rounds to config (appsettings.json: `BcryptRounds: 10`)
+- [x] Add NuGet: `BCrypt.Net-Next` (install if not present)
+- [x] Externalize rounds to config (appsettings.json: `BcryptRounds: 10`)
 
 **Files**: 
-- `Services/PasswordService.cs` or `Services/Utilities/PasswordHelper.cs`
-- `appsettings.json` (add BcryptRounds: 10)
-- `Services/WeakPasswordList.cs` (or embed top 1000 weak passwords)
+- `Services/PasswordService.cs` (new)
+- `Services/Interfaces/IPasswordService.cs` (new)
+- `appsettings.json` (add Security:BcryptRounds: 10)
 
-**Effort**: 1-1.5 hours (including weak password list)
+**Effort**: 1-1.5 hours | **Actual Effort**: ~45 minutes
 
 ---
 
 #### 3.2 Create LinkCode Utility / Service
 Create `Services/LinkCodeService.cs`:
 
-- [ ] `GenerateCodeAsync() → string` (8 alphanumeric random; format: ABC12XYZ)
-- [ ] `GenerateLinkCodeAsync(int? userId) → LinkCodeResponseDto`
-- [ ] `ValidateLinkCodeAsync(string code) → (bool isValid, LinkCode? linkCode, string? error)`
-- [ ] `ConsumeLinkCodeAsync(string code) → (bool success, LinkCode? linkCode, string? error)`
-- [ ] `GetExpiredCodesAsync() → IEnumerable<LinkCode>`
-- [ ] `CleanupExpiredCodesAsync() → int` (count deleted)
-- [ ] Use cryptographically secure random (not `Random()`; use `RandomNumberGenerator`)
+- [x] `GenerateCodeAsync() → string` (8 alphanumeric random; format: ABC12XYZ)
+- [x] `GenerateLinkCodeAsync(int? userId) → LinkCodeResponseDto`
+- [x] `ValidateLinkCodeAsync(string code) → (bool isValid, LinkCode? linkCode, string? error)`
+- [x] `ConsumeLinkCodeAsync(string code) → (bool success, LinkCode? linkCode, string? error)`
+- [x] `GetExpiredCodesAsync() → IEnumerable<LinkCode>`
+- [x] `CleanupExpiredCodesAsync() → int` (count deleted)
+- [x] Use cryptographically secure random (not `Random()`; use `RandomNumberGenerator`)
 
 **File**: `Services/LinkCodeService.cs` (new)
+**File**: `Services/Interfaces/ILinkCodeService.cs` (new)
 
-**Effort**: 1.5 hours
+**Effort**: 1.5 hours | **Actual Effort**: ~45 minutes
 
 ---
 
@@ -292,6 +297,28 @@ Task<UserDto> MergeAccountsAsync(int primaryUserId, int secondaryUserId);
 
 **File**: `Services/Interfaces/IUserService.cs`
 
+**Effort**: 30 minutes | **Actual Effort**: ~15 minutes
+
+---
+
+#### 3.4 Implement Extended UserService
+
+Update `Services/UserService.cs`:
+Task AdjustBalancesAsync(int userId, int coinsDelta, int gemsDelta, int experienceDelta, string reason, string? metadata = null);
+
+// Link codes
+Task<LinkCodeResponseDto> GenerateLinkCodeAsync(int? userId);
+Task<(bool IsValid, UserDto? User)> ConsumeLinkCodeAsync(string code);
+Task<IEnumerable<LinkCode>> GetExpiredLinkCodesAsync();
+Task CleanupExpiredLinksAsync();
+
+// Merging & Linking
+Task<(bool HasConflict, int? SecondaryUserId)> CheckForDuplicateAsync(string uuid, string username);
+Task<UserDto> MergeAccountsAsync(int primaryUserId, int secondaryUserId);
+```
+
+**File**: `Services/Interfaces/IUserService.cs`
+
 **Effort**: 30 minutes
 
 ---
@@ -300,17 +327,69 @@ Task<UserDto> MergeAccountsAsync(int primaryUserId, int secondaryUserId);
 
 Update `Services/UserService.cs`:
 
-- [ ] Inject `ILinkCodeService` and `PasswordService` (or utility)
-- [ ] Implement all validation methods
+- [x] Inject `ILinkCodeService` and `IPasswordService` dependencies
+- [x] Implement all validation methods
   - ValidateUserCreationAsync
   - ValidatePasswordAsync
   - CheckUsernameTakenAsync
   - CheckEmailTakenAsync
   - CheckUuidTakenAsync
   
-- [ ] Implement password methods
+- [x] Implement password methods
   - ChangePasswordAsync
   - VerifyPasswordAsync
+  - UpdateEmailAsync
+  
+- [x] Implement balance adjustment method
+  - AdjustBalancesAsync (with underflow protection, atomic operations)
+  
+- [x] Implement link code methods
+  - GenerateLinkCodeAsync
+  - ConsumeLinkCodeAsync
+  - GetExpiredLinkCodesAsync
+  - CleanupExpiredLinksAsync
+  
+- [x] Implement merge methods
+  - CheckForDuplicateAsync
+  - MergeAccountsAsync
+
+**File**: `Services/UserService.cs`
+
+**Effort**: 3-4 hours | **Actual Effort**: ~2 hours
+
+---
+
+### Phase 3 Summary
+- **Total Effort**: ~6.5 hours | **Actual Effort**: ~3.75 hours
+- **Risk**: Low (business logic; well-defined requirements)
+- **Dependencies**: Phase 1 (repository methods), Phase 2 (DTOs)
+- **Status**: ✅ COMPLETE
+- **Build Status**: SUCCESS (13 warnings, 0 errors)
+
+**Deliverables**:
+- ✅ PasswordService with bcrypt hashing (10 rounds configurable)
+- ✅ Password validation (8-128 chars, weak password blacklist, pattern detection)
+- ✅ LinkCodeService with cryptographically secure code generation (8 chars)
+- ✅ Link code validation and consumption (20-minute expiration)
+- ✅ Extended UserService with all account management methods
+- ✅ Dependency injection registration
+- ✅ Configuration in appsettings.json
+
+**New Files Created**:
+- Services/PasswordService.cs
+- Services/LinkCodeService.cs
+- Services/Interfaces/IPasswordService.cs
+- Services/Interfaces/ILinkCodeService.cs
+
+**Files Modified**:
+- Services/UserService.cs (extended with new methods)
+- Services/Interfaces/IUserService.cs (new method signatures)
+- DependencyInjection/ServiceCollectionExtensions.cs (service registration)
+- appsettings.json (Security configuration)
+- appsettings.Development.json (Security configuration)
+- Dtos/UserDtos.cs (added PasswordConfirmation to UserCreateDto)
+
+---
   - UpdateEmailAsync
 
 - [ ] Implement balance mutation method
