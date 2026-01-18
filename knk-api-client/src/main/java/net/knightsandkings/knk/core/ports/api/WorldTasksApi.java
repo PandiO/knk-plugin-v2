@@ -32,11 +32,12 @@ public interface WorldTasksApi {
     /**
      * Claim a task for processing.
      * @param id Task ID
+     * @param linkCode The link code (for verification)
      * @param serverId Server ID claiming the task
      * @param minecraftUsername Username claiming the task
      * @return The updated task
      */
-    CompletableFuture<WorldTaskDto> claim(int id, String serverId, String minecraftUsername);
+    CompletableFuture<WorldTaskDto> claim(int id, String linkCode, String serverId, String minecraftUsername);
 
     /**
      * Complete a task with output data.
