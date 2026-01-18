@@ -405,6 +405,18 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     }
 
     /**
+     * Check if a WorldGuard region is completely inside another WorldGuard region.
+     * Compares the bounds of the child region against the parent region.
+     */
+    private boolean isRegionInsideRegion(ProtectedRegion parentRegion, ProtectedRegion childRegion) {
+        BlockVector3 min = childRegion.getMinimumPoint();
+        BlockVector3 max = childRegion.getMaximumPoint();
+        
+        // Check if all corners of child region are inside parent region
+        return parentRegion.contains(min) && parentRegion.contains(max);
+    }
+
+    /**
      * Check if a WorldEdit selection is completely inside a WorldGuard region.
      * Validates all polygon vertices at min and max Y.
      */
