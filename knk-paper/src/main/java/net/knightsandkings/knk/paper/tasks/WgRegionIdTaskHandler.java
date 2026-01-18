@@ -5,13 +5,10 @@ import com.google.gson.JsonParser;
 import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
-import com.sk89q.worldedit.command.tool.InvalidToolBindException;
-import com.sk89q.worldedit.command.tool.SelectionWand;
 import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Polygonal2DRegion;
 import com.sk89q.worldedit.regions.Region;
-import com.sk89q.worldedit.world.item.ItemTypes;
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.flags.Flag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
@@ -29,8 +26,10 @@ import java.util.logging.Logger;
 
 /**
  * Handler for WgRegionId field tasks.
- * Allows players to define a WorldGuard region using WorldEdit selection.
- * Supports selection-based region creation with validation and cleanup.
+ * Allows players to define a WorldGuard region by either:
+ * 1. Creating a new region using WorldEdit selection
+ * 2. Selecting an existing WorldGuard region
+ * Supports both approaches with validation and cleanup.
  */
 public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     private static final Logger LOGGER = Logger.getLogger(WgRegionIdTaskHandler.class.getName());
@@ -96,26 +95,25 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
         
         activeTasksByPlayer.put(player, context);
         
-        // Equip WorldEdit wand and enable CUI selection (must run on main thread)
+        // Enable CUI selection for WorldEdit (must run on main thread)
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             try {
                 LocalSession session = WorldEdit.getInstance().getSessionManager().get(BukkitAdapter.adapt(player));
-                session.setTool(ItemTypes.get(session.getWandItem()), new SelectionWand());
                 session.dispatchCUISelection(BukkitAdapter.adapt(player));
                 
-                player.sendMessage("§6[WorldTask] Define a WorldGuard region using WorldEdit selection.");
+                player.sendMessage("§6[WorldTask] Define a WorldGuard region.");
                 player.sendMessage("§7[WorldTask] Task ID: " + taskId);
-                player.sendMessage("§eTip: Use '//sel poly' for polygonal selection, or '//sel cuboid' for cubic regions.");
-                player.sendMessage("§eFor more info: https://minecraft-worldedit.fandom.com/wiki///sel");
-                player.sendMessage("§aType 'save' in chat to confirm your selection, or 'cancel' to abort.");
+                player.sendMessage("§eOption 1 - Create new region: Use '//sel poly' or '//sel cuboid', then type 'save'");
+                player.sendMessage("§eOption 2 - Select existing: Type 'select {regionname}'");
+                player.sendMessage("§7Or type 'cancel' to abort.");
                 if (context.parentRegionId != null) {
-                    player.sendMessage("§7Note: Selection must be inside parent region: " + context.parentRegionId);
+                    player.sendMessage("§7Note: Region must be inside parent region: " + context.parentRegionId);
                 }
                 
                 LOGGER.info("Started WgRegionId task for player " + player.getName() + " (task " + taskId + ")");
-            } catch (InvalidToolBindException e) {
-                player.sendMessage("§c[WorldTask] Failed to equip WorldEdit wand: " + e.getMessage());
-                LOGGER.warning("Failed to equip wand for task " + taskId + ": " + e.getMessage());
+            } catch (Exception e) {
+                player.sendMessage("§c[WorldTask] Failed to initialize WorldEdit session: " + e.getMessage());
+                LOGGER.warning("Failed to initialize WorldEdit session for task " + taskId + ": " + e.getMessage());
             }
         });
     }
@@ -152,7 +150,7 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
 
     /**
      * Handle chat input from player during task.
-     * Processes 'save', 'cancel', 'pause', 'resume' commands.
+     * Processes 'save', 'cancel', 'pause', 'resume', 'select {regionname}' commands.
      * 
      * @param player The player
      * @param message The chat message
@@ -175,6 +173,10 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             return true;
         } else if (cmd.equals("resume")) {
             handleResume(player, context);
+            return true;
+        } else if (cmd.startsWith("select ")) {
+            String regionName = message.trim().substring(7);
+            handleSelect(player, context, regionName);
             return true;
         }
         
@@ -263,6 +265,72 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     }
 
     /**
+     * Handle select command: validate and select an existing region
+     */
+    private void handleSelect(Player player, TaskContext context, String regionName) {
+        if (context.paused) {
+            player.sendMessage("§c[WorldTask] Task is paused. Type 'resume' to continue.");
+            return;
+        }
+
+        if (regionName == null || regionName.trim().isEmpty()) {
+            player.sendMessage("§c[WorldTask] Please specify a region name: select {regionname}");
+            return;
+        }
+
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            try {
+                World world = player.getWorld();
+                RegionManager regionManager = WorldGuard.getInstance().getPlatform().getRegionContainer()
+                    .get(BukkitAdapter.adapt(world));
+                
+                if (regionManager == null) {
+                    player.sendMessage("§c[WorldTask] Failed to access WorldGuard region manager.");
+                    return;
+                }
+                
+                ProtectedRegion region = regionManager.getRegion(regionName);
+                
+                if (region == null) {
+                    player.sendMessage("§c[WorldTask] Region not found: " + regionName);
+                    player.sendMessage("§7Available regions: " + String.join(", ", regionManager.getRegions().keySet()));
+                    return;
+                }
+                
+                // Validate parent region containment if required
+                if (context.parentRegionId != null) {
+                    ProtectedRegion parentRegion = regionManager.getRegion(context.parentRegionId);
+                    
+                    if (parentRegion == null) {
+                        player.sendMessage("§c[WorldTask] Parent region not found: " + context.parentRegionId);
+                        return;
+                    }
+                    
+                    // Check if selected region is completely inside parent region
+                    if (!isRegionInsideRegion(parentRegion, region)) {
+                        player.sendMessage("§c[WorldTask] Region is not entirely inside required parent region: " + context.parentRegionId);
+                        return;
+                    }
+                }
+                
+                player.sendMessage("§a[WorldTask] Region selected: " + regionName);
+                player.sendMessage("§7Completing task...");
+                
+                // Clear WorldEdit session
+                WorldEdit.getInstance().getSessionManager().remove(BukkitAdapter.adapt(player));
+                
+                // Complete task via API
+                completeTask(player, context, regionName, world.getName());
+                
+            } catch (Exception e) {
+                player.sendMessage("§c[WorldTask] Error selecting region: " + e.getMessage());
+                LOGGER.warning("Error in handleSelect for task " + context.taskId + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+    }
+
+    /**
      * Handle pause command
      */
     private void handlePause(Player player, TaskContext context) {
@@ -323,6 +391,18 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 });
                 return null;
             });
+    }
+
+    /**
+     * Check if a WorldGuard region is completely inside another WorldGuard region.
+     * Compares the bounds of the child region against the parent region.
+     */
+    private boolean isRegionInsideRegion(ProtectedRegion parentRegion, ProtectedRegion childRegion) {
+        BlockVector3 min = childRegion.getMinimumPoint();
+        BlockVector3 max = childRegion.getMaximumPoint();
+        
+        // Check if all corners of child region are inside parent region
+        return parentRegion.contains(min) && parentRegion.contains(max);
     }
 
     /**
@@ -409,33 +489,33 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
      */
     @Deprecated
     public void onRegionEnter(Player player, String regionId) {
-        TaskContext context = activeTasksByPlayer.get(player);
-        if (context == null) return;
+        // TaskContext context = activeTasksByPlayer.get(player);
+        // if (context == null) return;
 
-        // Build output JSON
-        String outputJson = String.format(
-            "{\"fieldName\":\"WgRegionId\",\"claimedRegionId\":\"%s\",\"claimedAt\":%d}",
-            regionId.replace("\"", "\\\""),
-            System.currentTimeMillis()
-        );
+        // // Build output JSON
+        // String outputJson = String.format(
+        //     "{\"fieldName\":\"WgRegionId\",\"claimedRegionId\":\"%s\",\"claimedAt\":%d}",
+        //     regionId.replace("\"", "\\\""),
+        //     System.currentTimeMillis()
+        // );
 
-        // Complete the task via API
-        worldTasksApi.complete(context.taskId, outputJson)
-            .thenAccept(completedTask -> {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    activeTasksByPlayer.remove(player);
-                    player.sendMessage("§a[WorldTask] ✓ Task completed! Region " + regionId + " has been created.");
-                    LOGGER.info("Completed WgRegionId task for player " + player.getName() 
-                        + " (task " + context.taskId + ") with region: " + regionId);
-                });
-            })
-            .exceptionally(ex -> {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    player.sendMessage("§c[WorldTask] Failed to complete task: " + ex.getMessage());
-                    LOGGER.warning("Failed to complete WgRegionId task " + context.taskId + ": " + ex.getMessage());
-                });
-                return null;
-            });
+        // // Complete the task via API
+        // worldTasksApi.complete(context.taskId, outputJson)
+        //     .thenAccept(completedTask -> {
+        //         plugin.getServer().getScheduler().runTask(plugin, () -> {
+        //             activeTasksByPlayer.remove(player);
+        //             player.sendMessage("§a[WorldTask] ✓ Task completed! Region " + regionId + " has been claimed.");
+        //             LOGGER.info("Completed WgRegionId task for player " + player.getName() 
+        //                 + " (task " + context.taskId + ") with region: " + regionId);
+        //         });
+        //     })
+        //     .exceptionally(ex -> {
+        //         plugin.getServer().getScheduler().runTask(plugin, () -> {
+        //             player.sendMessage("§c[WorldTask] Failed to complete task: " + ex.getMessage());
+        //             LOGGER.warning("Failed to complete WgRegionId task " + context.taskId + ": " + ex.getMessage());
+        //         });
+        //         return null;
+        //     });
     }
 
     /**
