@@ -472,6 +472,132 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     }
 
     /**
+     * Rename a WorldGuard region from its old name to a new name.
+     * This is used to finalize temporary region names when an entity is successfully created.
+     * Format for domain instance entities: "domain_{entity-id}"
+     * 
+     * @param oldRegionId The current/temporary region ID
+     * @param newRegionId The final region ID
+     * @return true if successful, false otherwise
+     */
+    public boolean renameRegion(String oldRegionId, String newRegionId) {
+        if (oldRegionId == null || oldRegionId.trim().isEmpty() || 
+            newRegionId == null || newRegionId.trim().isEmpty()) {
+            LOGGER.warning("Cannot rename region: oldRegionId or newRegionId is null/empty");
+            return false;
+        }
+        
+        if (oldRegionId.equals(newRegionId)) {
+            // Already the desired name
+            return true;
+        }
+        
+        try {
+            // Find the world containing this region
+            World world = findWorldByRegion(oldRegionId);
+            if (world == null) {
+                LOGGER.warning("Failed to rename region: could not find world containing region " + oldRegionId);
+                return false;
+            }
+            
+            RegionManager regionManager = WorldGuard.getInstance().getPlatform().getRegionContainer()
+                .get(BukkitAdapter.adapt(world));
+            
+            if (regionManager == null) {
+                LOGGER.warning("Failed to rename region: could not access region manager for world " + world.getName());
+                return false;
+            }
+            
+            ProtectedRegion region = regionManager.getRegion(oldRegionId);
+            if (region == null) {
+                LOGGER.warning("Failed to rename region: region not found: " + oldRegionId);
+                return false;
+            }
+            
+            // Check if target name already exists
+            if (regionManager.getRegion(newRegionId) != null) {
+                LOGGER.warning("Failed to rename region: target region name already exists: " + newRegionId);
+                return false;
+            }
+            
+            // Remove old region and create new one with updated name
+            regionManager.removeRegion(oldRegionId);
+            
+            // Create new region with same properties but new ID
+            ProtectedRegion newRegion;
+            if (region instanceof ProtectedPolygonalRegion) {
+                ProtectedPolygonalRegion polyRegion = (ProtectedPolygonalRegion) region;
+                newRegion = new ProtectedPolygonalRegion(
+                    newRegionId,
+                    polyRegion.getPoints(),
+                    polyRegion.getMinimumPoint().getBlockY(),
+                    polyRegion.getMaximumPoint().getBlockY()
+                );
+            } else if (region instanceof com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion) {
+                com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion cuboidRegion = 
+                    (com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion) region;
+                newRegion = new com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion(
+                    newRegionId,
+                    cuboidRegion.getMinimumPoint(),
+                    cuboidRegion.getMaximumPoint()
+                );
+            } else {
+                LOGGER.warning("Failed to rename region: unsupported region type");
+                // Restore old region if we can't handle the type
+                regionManager.addRegion(region);
+                return false;
+            }
+            
+            // Copy properties from old region
+            newRegion.setPriority(region.getPriority());
+            
+            // Copy flags
+            for (Flag<?> flag : region.getFlags().keySet()) {
+                try {
+                    Object value = region.getFlag(flag);
+                    newRegion.setFlag((Flag) flag, value);
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to copy flag " + flag.getName() + ": " + e.getMessage());
+                }
+            }
+            
+            // Add the new region
+            regionManager.addRegion(newRegion);
+            
+            LOGGER.info("Successfully renamed region from " + oldRegionId + " to " + newRegionId);
+            return true;
+            
+        } catch (Exception e) {
+            LOGGER.warning("Failed to rename region from " + oldRegionId + " to " + newRegionId + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Find the world that contains a specific region by name.
+     * Searches all loaded worlds for the region.
+     * 
+     * @param regionId The region ID to search for
+     * @return The world containing the region, or null if not found
+     */
+    private World findWorldByRegion(String regionId) {
+        try {
+            for (World world : plugin.getServer().getWorlds()) {
+                RegionManager regionManager = WorldGuard.getInstance().getPlatform().getRegionContainer()
+                    .get(BukkitAdapter.adapt(world));
+                
+                if (regionManager != null && regionManager.getRegion(regionId) != null) {
+                    return world;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warning("Error searching for region " + regionId + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Cleanup temporary region if it's unused
      */
     private void cleanupTempRegion(World world, String regionId) {
