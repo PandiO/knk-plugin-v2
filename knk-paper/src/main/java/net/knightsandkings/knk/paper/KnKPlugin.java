@@ -23,6 +23,7 @@ import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.ports.gates.GateControlPort;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
+import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
 import net.knightsandkings.knk.paper.cache.CacheManager;
@@ -40,6 +41,7 @@ import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
+    private RegionHttpServer regionHttpServer;
     private KnkConfig config;
     private CacheManager cacheManager;
     private TownsQueryApi townsQueryApi;
@@ -101,13 +103,21 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("UsersQueryApi wired from API client");
             getLogger().info("UsersCommandApi wired from API client");
             getLogger().info("WorldTasksApi wired from API client");
-            
+
             // Initialize WorldTask handler registry and register handlers
             this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
             
             // Register WgRegionId handler
             WgRegionIdTaskHandler wgRegionIdHandler = new WgRegionIdTaskHandler(worldTasksApi, this);
             worldTaskHandlerRegistry.registerHandler(wgRegionIdHandler);
+
+            // Start lightweight HTTP server for region rename callbacks (default port 8081)
+            int httpPort = 8081;
+            try {
+                httpPort = this.getConfig().getInt("region-http.port", 8081);
+            } catch (Exception ignored) { }
+            regionHttpServer = new RegionHttpServer(this, wgRegionIdHandler, httpPort);
+            regionHttpServer.start();
             
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
@@ -200,6 +210,9 @@ public class KnKPlugin extends JavaPlugin {
         if (apiClient != null) {
             getLogger().info("Shutting down API client...");
             apiClient.shutdown();
+        }
+        if (regionHttpServer != null) {
+            regionHttpServer.stop();
         }
         if (regionLookupExecutor != null) {
             regionLookupExecutor.shutdownNow();
