@@ -38,6 +38,7 @@ import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
+import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
@@ -55,6 +56,7 @@ public class KnKPlugin extends JavaPlugin {
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private ExecutorService regionLookupExecutor;
+    private TempRegionRetentionTask tempRegionRetentionTask;
     
     @Override
     public void onEnable() {
@@ -118,6 +120,10 @@ public class KnKPlugin extends JavaPlugin {
             } catch (Exception ignored) { }
             regionHttpServer = new RegionHttpServer(this, wgRegionIdHandler, httpPort);
             regionHttpServer.start();
+
+            // Start temp region retention task (14 day retention policy)
+            tempRegionRetentionTask = new TempRegionRetentionTask(this, 14);
+            tempRegionRetentionTask.start();
             
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
@@ -202,6 +208,9 @@ public class KnKPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (tempRegionRetentionTask != null) {
+            tempRegionRetentionTask.stop();
+        }
         if (cacheManager != null) {
             getLogger().info("Logging final cache metrics...");
             cacheManager.logMetrics();
