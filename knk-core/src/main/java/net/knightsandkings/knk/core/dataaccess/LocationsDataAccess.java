@@ -24,6 +24,7 @@ public class LocationsDataAccess {
     
     private final LocationCache locationCache;
     private final LocationsQueryApi locationsQueryApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<Integer, KnkLocation> executor;
     
     /**
@@ -51,9 +52,18 @@ public class LocationsDataAccess {
         Duration ttl,
         LocationsQueryApi locationsQueryApi
     ) {
+        this(ttl, locationsQueryApi, DataAccessSettings.defaults());
+    }
+
+    public LocationsDataAccess(
+        Duration ttl,
+        LocationsQueryApi locationsQueryApi,
+        DataAccessSettings settings
+    ) {
         this.locationCache = new LocationCache(ttl);
         this.locationsQueryApi = Objects.requireNonNull(locationsQueryApi, "locationsQueryApi must not be null");
-        this.executor = new DataAccessExecutor<>(locationCache, "Location");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(locationCache, this.settings.retryPolicy(), "Location");
     }
     
     /**
@@ -70,7 +80,7 @@ public class LocationsDataAccess {
         int id,
         FetchPolicy policy
     ) {
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             id,
@@ -93,7 +103,7 @@ public class LocationsDataAccess {
      * @return CompletableFuture resolving to FetchResult<KnkLocation>
      */
     public CompletableFuture<FetchResult<KnkLocation>> getByIdAsync(int id) {
-        return getByIdAsync(id, FetchPolicy.CACHE_FIRST);
+        return getByIdAsync(id, null);
     }
     
     /**
@@ -107,7 +117,7 @@ public class LocationsDataAccess {
     public CompletableFuture<FetchResult<KnkLocation>> refreshAsync(int id) {
         return executor.fetchAsync(
             id,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> locationsQueryApi.getById(id).thenApply(location -> {
                 if (location != null) {
                     locationCache.put(location);

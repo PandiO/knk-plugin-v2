@@ -26,6 +26,7 @@ public class DomainsDataAccess {
     
     private final DomainCache domainCache;
     private final DomainsQueryApi domainsQueryApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<String, DomainRegionSummary> executor;
     
     /**
@@ -53,9 +54,18 @@ public class DomainsDataAccess {
         Duration ttl,
         DomainsQueryApi domainsQueryApi
     ) {
+        this(ttl, domainsQueryApi, DataAccessSettings.defaults());
+    }
+
+    public DomainsDataAccess(
+        Duration ttl,
+        DomainsQueryApi domainsQueryApi,
+        DataAccessSettings settings
+    ) {
         this.domainCache = new DomainCache(ttl);
         this.domainsQueryApi = Objects.requireNonNull(domainsQueryApi, "domainsQueryApi must not be null");
-        this.executor = new DataAccessExecutor<>(domainCache, "Domain");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(domainCache, this.settings.retryPolicy(), "Domain");
     }
     
     /**
@@ -73,7 +83,7 @@ public class DomainsDataAccess {
         FetchPolicy policy
     ) {
         Objects.requireNonNull(wgRegionId, "wgRegionId must not be null");
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             wgRegionId,
@@ -96,7 +106,7 @@ public class DomainsDataAccess {
      * @return CompletableFuture resolving to FetchResult<DomainRegionSummary>
      */
     public CompletableFuture<FetchResult<DomainRegionSummary>> getByWgRegionIdAsync(String wgRegionId) {
-        return getByWgRegionIdAsync(wgRegionId, FetchPolicy.CACHE_FIRST);
+        return getByWgRegionIdAsync(wgRegionId, null);
     }
     
     /**
@@ -112,7 +122,7 @@ public class DomainsDataAccess {
         
         return executor.fetchAsync(
             wgRegionId,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> domainsQueryApi.getByWorldGuardRegionId(wgRegionId).thenApply(domain -> {
                 if (domain != null) {
                     domainCache.put(domain);
@@ -137,5 +147,13 @@ public class DomainsDataAccess {
      */
     public void invalidateAll() {
         domainCache.clear();
+    }
+
+    public int cacheSize() {
+        return domainCache.size();
+    }
+
+    public net.knightsandkings.knk.core.cache.DomainCache.CacheMetrics getMetrics() {
+        return domainCache.getMetrics();
     }
 }

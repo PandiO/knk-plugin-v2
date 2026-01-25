@@ -22,6 +22,7 @@ public class StructuresDataAccess {
     
     private final StructureCache structureCache;
     private final StructuresQueryApi structuresQueryApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<Integer, StructureDetail> executor;
     
     /**
@@ -34,9 +35,18 @@ public class StructuresDataAccess {
         StructureCache structureCache,
         StructuresQueryApi structuresQueryApi
     ) {
+        this(structureCache, structuresQueryApi, DataAccessSettings.defaults());
+    }
+
+    public StructuresDataAccess(
+        StructureCache structureCache,
+        StructuresQueryApi structuresQueryApi,
+        DataAccessSettings settings
+    ) {
         this.structureCache = Objects.requireNonNull(structureCache, "structureCache must not be null");
         this.structuresQueryApi = Objects.requireNonNull(structuresQueryApi, "structuresQueryApi must not be null");
-        this.executor = new DataAccessExecutor<>(structureCache, "Structure");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(structureCache, this.settings.retryPolicy(), "Structure");
     }
     
     /**
@@ -53,7 +63,7 @@ public class StructuresDataAccess {
         int id,
         FetchPolicy policy
     ) {
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             id,
@@ -76,7 +86,7 @@ public class StructuresDataAccess {
      * @return CompletableFuture resolving to FetchResult<StructureDetail>
      */
     public CompletableFuture<FetchResult<StructureDetail>> getByIdAsync(int id) {
-        return getByIdAsync(id, FetchPolicy.CACHE_FIRST);
+        return getByIdAsync(id, null);
     }
     
     /**
@@ -109,7 +119,7 @@ public class StructuresDataAccess {
     public CompletableFuture<FetchResult<StructureDetail>> refreshAsync(int id) {
         return executor.fetchAsync(
             id,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> structuresQueryApi.getById(id).thenApply(structureDetail -> {
                 if (structureDetail != null) {
                     structureCache.put(structureDetail);

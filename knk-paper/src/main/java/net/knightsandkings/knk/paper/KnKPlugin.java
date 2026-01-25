@@ -39,12 +39,14 @@ import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
+import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
     private RegionHttpServer regionHttpServer;
     private KnkConfig config;
     private CacheManager cacheManager;
+    private DataAccessFactory dataAccessFactory;
     private TownsQueryApi townsQueryApi;
     private LocationsQueryApi locationsQueryApi;
     private DistrictsQueryApi districtsQueryApi;
@@ -127,9 +129,11 @@ public class KnKPlugin extends JavaPlugin {
             
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
-            // Initialize cache manager
+            // Initialize cache manager and data access factory from config
             this.cacheManager = new CacheManager(config.cache().ttl());
+            this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
+            getLogger().info("Data access factory initialized with entity-specific settings");
 
             // Register commands
             registerCommands();

@@ -22,6 +22,7 @@ public class DistrictsDataAccess {
     
     private final DistrictCache districtCache;
     private final DistrictsQueryApi districtsQueryApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<Integer, DistrictDetail> executor;
     
     /**
@@ -34,9 +35,18 @@ public class DistrictsDataAccess {
         DistrictCache districtCache,
         DistrictsQueryApi districtsQueryApi
     ) {
+        this(districtCache, districtsQueryApi, DataAccessSettings.defaults());
+    }
+
+    public DistrictsDataAccess(
+        DistrictCache districtCache,
+        DistrictsQueryApi districtsQueryApi,
+        DataAccessSettings settings
+    ) {
         this.districtCache = Objects.requireNonNull(districtCache, "districtCache must not be null");
         this.districtsQueryApi = Objects.requireNonNull(districtsQueryApi, "districtsQueryApi must not be null");
-        this.executor = new DataAccessExecutor<>(districtCache, "District");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(districtCache, this.settings.retryPolicy(), "District");
     }
     
     /**
@@ -53,7 +63,7 @@ public class DistrictsDataAccess {
         int id,
         FetchPolicy policy
     ) {
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             id,
@@ -76,7 +86,7 @@ public class DistrictsDataAccess {
      * @return CompletableFuture resolving to FetchResult<DistrictDetail>
      */
     public CompletableFuture<FetchResult<DistrictDetail>> getByIdAsync(int id) {
-        return getByIdAsync(id, FetchPolicy.CACHE_FIRST);
+        return getByIdAsync(id, null);
     }
     
     /**
@@ -109,7 +119,7 @@ public class DistrictsDataAccess {
     public CompletableFuture<FetchResult<DistrictDetail>> refreshAsync(int id) {
         return executor.fetchAsync(
             id,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> districtsQueryApi.getById(id).thenApply(districtDetail -> {
                 if (districtDetail != null) {
                     districtCache.put(districtDetail);

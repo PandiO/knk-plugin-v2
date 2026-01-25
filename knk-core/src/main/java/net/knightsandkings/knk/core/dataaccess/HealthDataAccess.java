@@ -25,6 +25,7 @@ public class HealthDataAccess {
     
     private final HealthCache healthCache;
     private final HealthApi healthApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<String, HealthStatus> executor;
     
     /**
@@ -52,9 +53,18 @@ public class HealthDataAccess {
         Duration ttl,
         HealthApi healthApi
     ) {
+        this(ttl, healthApi, DataAccessSettings.defaults());
+    }
+
+    public HealthDataAccess(
+        Duration ttl,
+        HealthApi healthApi,
+        DataAccessSettings settings
+    ) {
         this.healthCache = new HealthCache(ttl);
         this.healthApi = Objects.requireNonNull(healthApi, "healthApi must not be null");
-        this.executor = new DataAccessExecutor<>(healthCache, "Health");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(healthCache, this.settings.retryPolicy(), "Health");
     }
     
     /**
@@ -67,7 +77,7 @@ public class HealthDataAccess {
      * @return CompletableFuture resolving to FetchResult<HealthStatus>
      */
     public CompletableFuture<FetchResult<HealthStatus>> getHealthAsync(FetchPolicy policy) {
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             HEALTH_KEY,
@@ -89,7 +99,7 @@ public class HealthDataAccess {
      * @return CompletableFuture resolving to FetchResult<HealthStatus>
      */
     public CompletableFuture<FetchResult<HealthStatus>> getHealthAsync() {
-        return getHealthAsync(FetchPolicy.CACHE_FIRST);
+        return getHealthAsync(null);
     }
     
     /**
@@ -102,7 +112,7 @@ public class HealthDataAccess {
     public CompletableFuture<FetchResult<HealthStatus>> refreshAsync() {
         return executor.fetchAsync(
             HEALTH_KEY,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> healthApi.getHealth().thenApply(health -> {
                 if (health != null) {
                     healthCache.put(health);

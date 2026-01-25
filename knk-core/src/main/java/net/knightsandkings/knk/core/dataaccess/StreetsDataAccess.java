@@ -24,6 +24,7 @@ public class StreetsDataAccess {
     
     private final StreetCache streetCache;
     private final StreetsQueryApi streetsQueryApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<Integer, StreetDetail> executor;
     
     /**
@@ -36,9 +37,18 @@ public class StreetsDataAccess {
         StreetCache streetCache,
         StreetsQueryApi streetsQueryApi
     ) {
+        this(streetCache, streetsQueryApi, DataAccessSettings.defaults());
+    }
+
+    public StreetsDataAccess(
+        StreetCache streetCache,
+        StreetsQueryApi streetsQueryApi,
+        DataAccessSettings settings
+    ) {
         this.streetCache = Objects.requireNonNull(streetCache, "streetCache must not be null");
         this.streetsQueryApi = Objects.requireNonNull(streetsQueryApi, "streetsQueryApi must not be null");
-        this.executor = new DataAccessExecutor<>(streetCache, "Street");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(streetCache, this.settings.retryPolicy(), "Street");
     }
     
     /**
@@ -55,7 +65,7 @@ public class StreetsDataAccess {
         int id,
         FetchPolicy policy
     ) {
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             id,
@@ -78,7 +88,7 @@ public class StreetsDataAccess {
      * @return CompletableFuture resolving to FetchResult<StreetDetail>
      */
     public CompletableFuture<FetchResult<StreetDetail>> getByIdAsync(int id) {
-        return getByIdAsync(id, FetchPolicy.CACHE_FIRST);
+        return getByIdAsync(id, null);
     }
     
     /**
@@ -92,7 +102,7 @@ public class StreetsDataAccess {
     public CompletableFuture<FetchResult<StreetDetail>> refreshAsync(int id) {
         return executor.fetchAsync(
             id,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> streetsQueryApi.getById(id).thenApply(streetDetail -> {
                 if (streetDetail != null) {
                     streetCache.put(streetDetail);

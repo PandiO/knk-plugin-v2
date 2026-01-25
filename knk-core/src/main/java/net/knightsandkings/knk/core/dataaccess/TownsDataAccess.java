@@ -22,6 +22,7 @@ public class TownsDataAccess {
     
     private final TownCache townCache;
     private final TownsQueryApi townsQueryApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<Integer, TownDetail> executor;
     
     /**
@@ -34,9 +35,18 @@ public class TownsDataAccess {
         TownCache townCache,
         TownsQueryApi townsQueryApi
     ) {
+        this(townCache, townsQueryApi, DataAccessSettings.defaults());
+    }
+
+    public TownsDataAccess(
+        TownCache townCache,
+        TownsQueryApi townsQueryApi,
+        DataAccessSettings settings
+    ) {
         this.townCache = Objects.requireNonNull(townCache, "townCache must not be null");
         this.townsQueryApi = Objects.requireNonNull(townsQueryApi, "townsQueryApi must not be null");
-        this.executor = new DataAccessExecutor<>(townCache, "Town");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(townCache, this.settings.retryPolicy(), "Town");
     }
     
     /**
@@ -53,7 +63,7 @@ public class TownsDataAccess {
         int id,
         FetchPolicy policy
     ) {
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             id,
@@ -76,7 +86,7 @@ public class TownsDataAccess {
      * @return CompletableFuture resolving to FetchResult<TownDetail>
      */
     public CompletableFuture<FetchResult<TownDetail>> getByIdAsync(int id) {
-        return getByIdAsync(id, FetchPolicy.CACHE_FIRST);
+        return getByIdAsync(id, null);
     }
     
     /**
@@ -109,7 +119,7 @@ public class TownsDataAccess {
     public CompletableFuture<FetchResult<TownDetail>> refreshAsync(int id) {
         return executor.fetchAsync(
             id,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> townsQueryApi.getById(id).thenApply(townDetail -> {
                 if (townDetail != null) {
                     townCache.put(townDetail);

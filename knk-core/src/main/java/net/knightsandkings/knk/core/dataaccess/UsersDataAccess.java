@@ -28,6 +28,7 @@ public class UsersDataAccess {
     private final UserCache userCache;
     private final UsersQueryApi usersQueryApi;
     private final UsersCommandApi usersCommandApi;
+    private final DataAccessSettings settings;
     private final DataAccessExecutor<UUID, UserSummary> executor;
     
     /**
@@ -42,10 +43,20 @@ public class UsersDataAccess {
         UsersQueryApi usersQueryApi,
         UsersCommandApi usersCommandApi
     ) {
+        this(userCache, usersQueryApi, usersCommandApi, DataAccessSettings.defaults());
+    }
+
+    public UsersDataAccess(
+        UserCache userCache,
+        UsersQueryApi usersQueryApi,
+        UsersCommandApi usersCommandApi,
+        DataAccessSettings settings
+    ) {
         this.userCache = Objects.requireNonNull(userCache, "userCache must not be null");
         this.usersQueryApi = Objects.requireNonNull(usersQueryApi, "usersQueryApi must not be null");
         this.usersCommandApi = Objects.requireNonNull(usersCommandApi, "usersCommandApi must not be null");
-        this.executor = new DataAccessExecutor<>(userCache, "User");
+        this.settings = Objects.requireNonNullElse(settings, DataAccessSettings.defaults());
+        this.executor = new DataAccessExecutor<>(userCache, this.settings.retryPolicy(), "User");
     }
     
     /**
@@ -63,7 +74,7 @@ public class UsersDataAccess {
         FetchPolicy policy
     ) {
         Objects.requireNonNull(uuid, "uuid must not be null");
-        policy = policy != null ? policy : FetchPolicy.CACHE_FIRST;
+        policy = settings.resolvePolicy(policy);
         
         return executor.fetchAsync(
             uuid,
@@ -86,7 +97,7 @@ public class UsersDataAccess {
      * @return CompletableFuture resolving to FetchResult<UserSummary>
      */
     public CompletableFuture<FetchResult<UserSummary>> getByUuidAsync(UUID uuid) {
-        return getByUuidAsync(uuid, FetchPolicy.CACHE_FIRST);
+        return getByUuidAsync(uuid, null);
     }
     
     /**
@@ -135,7 +146,7 @@ public class UsersDataAccess {
     ) {
         Objects.requireNonNull(uuid, "uuid must not be null");
         
-        return getByUuidAsync(uuid, FetchPolicy.CACHE_FIRST).thenCompose((FetchResult<UserSummary> result) -> {
+        return getByUuidAsync(uuid, null).thenCompose((FetchResult<UserSummary> result) -> {
             // If found (HIT or MISS_FETCHED with value present), return immediately
             if (result.isSuccess()) {
                 return CompletableFuture.completedFuture(result);
@@ -181,7 +192,7 @@ public class UsersDataAccess {
         
         return executor.fetchAsync(
             uuid,
-            FetchPolicy.API_ONLY,
+            settings.resolvePolicy(FetchPolicy.API_ONLY),
             () -> usersQueryApi.getByUuid(uuid).thenApply(userSummary -> {
                 if (userSummary != null) {
                     userCache.put(userSummary);
