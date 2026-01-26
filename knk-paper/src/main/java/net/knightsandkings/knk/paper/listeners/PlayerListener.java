@@ -2,9 +2,10 @@ package net.knightsandkings.knk.paper.listeners;
 
 import java.util.Arrays;
 import java.util.Date;
-import java.util.UUID;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
@@ -27,12 +28,15 @@ import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
+import net.knightsandkings.knk.core.dataaccess.FetchPolicy;
+import net.knightsandkings.knk.core.dataaccess.FetchResult;
+import net.knightsandkings.knk.core.dataaccess.FetchStatus;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.domain.districts.DistrictDetail.Town;
 import net.knightsandkings.knk.core.domain.towns.TownDetail;
 import net.knightsandkings.knk.core.domain.users.UserDetail;
 import net.knightsandkings.knk.core.domain.users.UserSummary;
-import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
-import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.utils.ColorOptions;
@@ -44,58 +48,75 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 public class PlayerListener implements Listener {
 	private static final Logger LOGGER = Logger.getLogger(PlayerListener.class.getName());
 	private static final long MENTION_SOUND_COOLDOWN_MILLIS = 5_000L;
+	private static final int DEFAULT_RESPAWN_TOWN_ID = 4;
 	private static final Map<UUID, Long> mentionSoundCooldowns = new ConcurrentHashMap<>();
 
-	private final UsersQueryApi usersQueryApi;
-	private final UsersCommandApi usersCommandApi;
+	private final UsersDataAccess usersDataAccess;
+	private final TownsDataAccess townsDataAccess;
 	private final CacheManager cacheManager;
 
-	public PlayerListener(UsersQueryApi usersQueryApi, UsersCommandApi usersCommandApi, CacheManager cacheManager) {
-		this.usersQueryApi = usersQueryApi;
+	public PlayerListener(UsersDataAccess usersDataAccess, TownsDataAccess townsDataAccess, CacheManager cacheManager) {
+		this.usersDataAccess = usersDataAccess;
+		this.townsDataAccess = townsDataAccess;
 		this.cacheManager = cacheManager;
-		this.usersCommandApi = usersCommandApi;
 	}
 
 	@EventHandler
 	public void onValidateLogin(AsyncPlayerPreLoginEvent e) {
 		UUID uuid = e.getUniqueId();
+		String username = e.getName();
 
-		// Check cache first
-		if (cacheManager.getUserCache().getByUuid(uuid).isPresent()) {
-			LOGGER.fine("User " + uuid + " found in cache");
-			return;
-		}
-
-		// Fetch from API and cache (already on async thread - safe for blocking)
 		try {
-			UserSummary user = usersQueryApi.getByUuid(uuid).join();
-			if (user == null) {
-				LOGGER.warning("User " + uuid + " not found in API");
-				user = usersQueryApi.getByUsername(e.getName()).join();
-				if (user == null) {
-					LOGGER.warning("User " + uuid + " with username " + e.getName() + " not found in API");
-				}
+			FetchResult<UserSummary> result = usersDataAccess.getByUuidAsync(uuid, FetchPolicy.STALE_OK).join();
+			if (result.isStale()) {
+				triggerBackgroundUserRefresh(uuid);
+			}
 
-				UserDetail newUser = new UserDetail(null, e.getName(), uuid, null, -1, new Date(), true);
-				usersCommandApi.create(newUser).whenComplete((createdUser, ex) -> {
-					if (ex != null) {
-						LOGGER.severe("Failed to create new user " + uuid + ": " + ex.getMessage());
-						return;
-					}
-					UserSummary createdSummary = new UserSummary(createdUser.id(), createdUser.username(), createdUser.uuid(), createdUser.coins(), true);
-					cacheManager.getUserCache().put(createdSummary);
-					LOGGER.info("Created and cached new user " + createdUser.username() + " (UUID: " + uuid + ")");
-				}).join();
+			if (result.isSuccess()) {
+				LOGGER.fine("User " + uuid + " loaded via " + result.source() + " (" + result.status() + ")");
 				return;
 			}
-			cacheManager.getUserCache().put(user);
-			LOGGER.info("Loaded user " + user.username() + " (UUID: " + uuid + ") from API");
+
+			if (result.status() == FetchStatus.NOT_FOUND) {
+				FetchResult<UserSummary> usernameLookup = usersDataAccess.getByUsernameAsync(username).join();
+				if (usernameLookup.isSuccess()) {
+					LOGGER.info("Loaded user " + username + " via username lookup (UUID: " + uuid + ")");
+					return;
+				}
+
+				UserDetail newUser = new UserDetail(null, username, uuid, null, -1, new Date(), true);
+				FetchResult<UserSummary> created = usersDataAccess.getOrCreateAsync(uuid, true, newUser).join();
+				if (created.isSuccess()) {
+					LOGGER.info("Created and cached new user " + username + " (UUID: " + uuid + ")");
+				} else if (created.status() == FetchStatus.ERROR) {
+					LOGGER.warning("Failed to create user " + uuid + ": " + created.error().map(Throwable::getMessage).orElse("unknown error"));
+				}
+				return;
+			}
+
+			if (result.status() == FetchStatus.ERROR) {
+				LOGGER.warning("Failed to load user " + uuid + " from API: " + result.error().map(Throwable::getMessage).orElse("unknown error"));
+			}
 		} catch (Exception ex) {
-			LOGGER.warning("Failed to load user " + uuid + " from API: " + ex.getMessage());
-			LOGGER.fine("Exception details: ");
-			ex.printStackTrace();
-			// Allow login to proceed even if API fetch fails
+			LOGGER.log(Level.WARNING, "Unexpected error loading user " + uuid + " from data access", ex);
+			// Allow login to proceed even if data fetch fails
 		}
+	}
+
+	private void triggerBackgroundUserRefresh(UUID uuid) {
+		usersDataAccess.refreshAsync(uuid)
+			.thenAccept(refreshResult -> {
+				if (refreshResult.isSuccess()) {
+					LOGGER.fine("Background refresh completed for user " + uuid);
+				} else if (refreshResult.status() == FetchStatus.ERROR) {
+					LOGGER.fine("Background refresh failed for user " + uuid + ": "
+						+ refreshResult.error().map(Throwable::getMessage).orElse("unknown error"));
+				}
+			})
+			.exceptionally(ex -> {
+				LOGGER.log(Level.WARNING, "Background refresh error for user " + uuid, ex);
+				return null;
+			});
 	}
 
 	@EventHandler
@@ -212,21 +233,23 @@ public class PlayerListener implements Listener {
 	@EventHandler
 	public void onPlayerRespawn(PlayerRespawnEvent e) {
 		Player player = e.getPlayer();
-		/**
-		 * TODO Should be replaced by a more safe way to fetch the default town.
-		 * Even better would be to load default values for spawn locations and other default settings from the DB and store them in a local yml file.
-		 * This would ensure the server can still function in a safe-mode state when the connection with the Api fails.
-		 */
-		TownDetail town = this.cacheManager.getTownCache().getById(4).orElse(null);
-		if (town == null) {
-			LOGGER.severe("Failed to load default town to respawn player at.");
-			// e.setRespawnLocation(Bukkit.getCurrentSpawnpoint().getLocation());
-			return;
-		}
-		/*
-		* TODO Implement logic to retrieve Bukkit Location from KnK location entity to set respawn location.
-		*/
-		// e.setRespawnLocation()
+		
+		// Fetch default town using TownsDataAccess (typically cached after server startup)
+		townsDataAccess.getByIdAsync(4, FetchPolicy.CACHE_FIRST).thenAccept(result -> {
+			if (!result.isSuccess()) {
+				LOGGER.severe("Failed to load default town for respawn");
+				return;
+			}
+
+			TownDetail town = result.value().orElseThrow();
+			/**
+			 * TODO Implement logic to retrieve Bukkit Location from KnK location entity to set respawn location.
+			 */
+			// e.setRespawnLocation()
+		}).exceptionally(e2 -> {
+			LOGGER.log(Level.WARNING, "Error fetching default town for respawn", e2);
+			return null;
+		});
 	}
 
 	@EventHandler

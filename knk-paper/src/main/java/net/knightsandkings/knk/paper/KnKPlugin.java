@@ -16,6 +16,8 @@ import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
@@ -55,6 +57,8 @@ public class KnKPlugin extends JavaPlugin {
     private DomainsQueryApi domainsQueryApi;
     private UsersQueryApi usersQueryApi;
     private UsersCommandApi usersCommandApi;
+    private UsersDataAccess usersDataAccess;
+    private TownsDataAccess townsDataAccess;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private ExecutorService regionLookupExecutor;
@@ -132,6 +136,15 @@ public class KnKPlugin extends JavaPlugin {
             // Initialize cache manager and data access factory from config
             this.cacheManager = new CacheManager(config.cache().ttl());
             this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
+            this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
+                cacheManager.getUserCache(),
+                usersQueryApi,
+                usersCommandApi
+            );
+            this.townsDataAccess = dataAccessFactory.createTownsDataAccess(
+                cacheManager.getTownCache(),
+                townsQueryApi
+            );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
             getLogger().info("Data access factory initialized with entity-specific settings");
 
@@ -238,7 +251,7 @@ public class KnKPlugin extends JavaPlugin {
         // Event registration moved to onEnable after region transition service setup
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
-        pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, this.getCacheManager()), this);
+        pluginManager.registerEvents(new PlayerListener(usersDataAccess, townsDataAccess, this.getCacheManager()), this);
     }
     
     /**
