@@ -62,16 +62,16 @@ public class KnkTaskListCommand implements CommandExecutor {
             default -> ChatColor.GRAY;
         };
 
-        String linkInfo = task.linkCode() != null 
-            ? ChatColor.WHITE + " [" + task.linkCode() + "]" 
-            : "";
+        // Show link code prominently for Pending tasks
+        String identifier = task.linkCode() != null && "Pending".equals(task.status())
+            ? ChatColor.WHITE + "[" + task.linkCode() + "]" + ChatColor.GRAY + " (ID: #" + task.id() + ")"
+            : ChatColor.GRAY + "#" + task.id();
 
         String claimedInfo = task.claimedByMinecraftUsername() != null 
             ? ChatColor.GRAY + " (claimed by " + task.claimedByMinecraftUsername() + ")" 
             : "";
 
-        return color + "#" + task.id() 
-            + linkInfo 
+        return color + identifier
             + ChatColor.GRAY + " - " + task.entityType() + "." + task.fieldName() 
             + claimedInfo;
     }

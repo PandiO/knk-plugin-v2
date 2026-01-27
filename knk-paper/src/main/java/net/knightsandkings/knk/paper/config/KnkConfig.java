@@ -84,7 +84,8 @@ public record KnkConfig(
     }
     
     public record CacheConfig(
-        int ttlSeconds
+        int ttlSeconds,
+        EntityCacheSettings entities
     ) {
         /**
          * Returns the cache TTL as a Duration.
@@ -101,7 +102,91 @@ public record KnkConfig(
          * @return Default CacheConfig with 60 second TTL
          */
         public static CacheConfig defaultConfig() {
-            return new CacheConfig(60);
+            return new CacheConfig(60, EntityCacheSettings.defaults());
+        }
+    }
+
+    public record EntityCacheSettings(
+        EntitySettings users,
+        EntitySettings towns,
+        EntitySettings districts,
+        EntitySettings structures,
+        EntitySettings streets,
+        EntitySettings locations,
+        EntitySettings domains,
+        EntitySettings health
+    ) {
+        public static EntityCacheSettings defaults() {
+            return new EntityCacheSettings(
+                EntitySettings.defaults(), // users
+                EntitySettings.defaults(), // towns
+                EntitySettings.defaults(), // districts
+                EntitySettings.defaults(), // structures
+                EntitySettings.defaults(), // streets
+                EntitySettings.defaults(), // locations
+                EntitySettings.defaults(), // domains
+                EntitySettings.defaults()  // health
+            );
+        }
+    }
+
+    public record EntitySettings(
+        Integer ttlMinutes,
+        Integer ttlSeconds,
+        Integer maxTtlMinutes,
+        Integer maxTtlSeconds,
+        String defaultPolicy,
+        Boolean allowStale,
+        Integer retryAttempts,
+        Integer retryBackoffMs
+    ) {
+        public Duration ttl() {
+            if (ttlSeconds != null) {
+                return Duration.ofSeconds(ttlSeconds);
+            }
+            if (ttlMinutes != null) {
+                return Duration.ofMinutes(ttlMinutes);
+            }
+            return Duration.ofMinutes(15); // fallback default
+        }
+
+        public Duration maxTtl() {
+            if (maxTtlSeconds != null) {
+                return Duration.ofSeconds(maxTtlSeconds);
+            }
+            if (maxTtlMinutes != null) {
+                return Duration.ofMinutes(maxTtlMinutes);
+            }
+            return Duration.ofHours(1); // fallback default
+        }
+
+        public String policyName() {
+            return defaultPolicy != null ? defaultPolicy : "CACHE_FIRST";
+        }
+
+        public boolean isStaleAllowed() {
+            return allowStale != null ? allowStale : true;
+        }
+
+        public int maxRetries() {
+            return retryAttempts != null ? retryAttempts : 3;
+        }
+
+        public int backoffMs() {
+            return retryBackoffMs != null ? retryBackoffMs : 100;
+        }
+
+        public static EntitySettings defaults() {
+            return new EntitySettings(
+                15, // ttlMinutes
+                null, // ttlSeconds
+                60, // maxTtlMinutes
+                null, // maxTtlSeconds
+                "CACHE_FIRST", // defaultPolicy
+                true, // allowStale
+                3, // retryAttempts
+                100  // retryBackoffMs
+            );
         }
     }
 }

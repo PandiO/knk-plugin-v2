@@ -16,6 +16,8 @@ import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
@@ -23,10 +25,9 @@ import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.ports.gates.GateControlPort;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
+import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
-import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
-import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
@@ -35,12 +36,19 @@ import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
+import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
+import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
+import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
+import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
+import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
+    private RegionHttpServer regionHttpServer;
     private KnkConfig config;
     private CacheManager cacheManager;
+    private DataAccessFactory dataAccessFactory;
     private TownsQueryApi townsQueryApi;
     private LocationsQueryApi locationsQueryApi;
     private DistrictsQueryApi districtsQueryApi;
@@ -49,9 +57,12 @@ public class KnKPlugin extends JavaPlugin {
     private DomainsQueryApi domainsQueryApi;
     private UsersQueryApi usersQueryApi;
     private UsersCommandApi usersCommandApi;
+    private UsersDataAccess usersDataAccess;
+    private TownsDataAccess townsDataAccess;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private ExecutorService regionLookupExecutor;
+    private TempRegionRetentionTask tempRegionRetentionTask;
     
     @Override
     public void onEnable() {
@@ -100,19 +111,42 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("UsersQueryApi wired from API client");
             getLogger().info("UsersCommandApi wired from API client");
             getLogger().info("WorldTasksApi wired from API client");
-            
+
             // Initialize WorldTask handler registry and register handlers
             this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
             
             // Register WgRegionId handler
             WgRegionIdTaskHandler wgRegionIdHandler = new WgRegionIdTaskHandler(worldTasksApi, this);
             worldTaskHandlerRegistry.registerHandler(wgRegionIdHandler);
+
+            // Start lightweight HTTP server for region rename callbacks (default port 8081)
+            int httpPort = 8081;
+            try {
+                httpPort = this.getConfig().getInt("region-http.port", 8081);
+            } catch (Exception ignored) { }
+            regionHttpServer = new RegionHttpServer(this, wgRegionIdHandler, httpPort);
+            regionHttpServer.start();
+
+            // Start temp region retention task (14 day retention policy)
+            tempRegionRetentionTask = new TempRegionRetentionTask(this, 14);
+            tempRegionRetentionTask.start();
             
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
-            // Initialize cache manager
+            // Initialize cache manager and data access factory from config
             this.cacheManager = new CacheManager(config.cache().ttl());
+            this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
+            this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
+                cacheManager.getUserCache(),
+                usersQueryApi,
+                usersCommandApi
+            );
+            this.townsDataAccess = dataAccessFactory.createTownsDataAccess(
+                cacheManager.getTownCache(),
+                townsQueryApi
+            );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
+            getLogger().info("Data access factory initialized with entity-specific settings");
 
             // Register commands
             registerCommands();
@@ -170,6 +204,13 @@ public class KnKPlugin extends JavaPlugin {
                 getLogger().info("Registered RegionTaskEventListener for WgRegionId handler");
             }
             
+            // Register world task chat listener for handling chat input during tasks
+            getServer().getPluginManager().registerEvents(
+                new WorldTaskChatListener(this, worldTaskHandlerRegistry),
+                this
+            );
+            getLogger().info("Registered WorldTaskChatListener for task chat input handling");
+            
             getLogger().info("Region transition service initialized with domain resolver and gate control");
 
             getLogger().info("KnightsAndKings Plugin Enabled!");
@@ -184,6 +225,9 @@ public class KnKPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (tempRegionRetentionTask != null) {
+            tempRegionRetentionTask.stop();
+        }
         if (cacheManager != null) {
             getLogger().info("Logging final cache metrics...");
             cacheManager.logMetrics();
@@ -192,6 +236,9 @@ public class KnKPlugin extends JavaPlugin {
         if (apiClient != null) {
             getLogger().info("Shutting down API client...");
             apiClient.shutdown();
+        }
+        if (regionHttpServer != null) {
+            regionHttpServer.stop();
         }
         if (regionLookupExecutor != null) {
             regionLookupExecutor.shutdownNow();
@@ -204,7 +251,7 @@ public class KnKPlugin extends JavaPlugin {
         // Event registration moved to onEnable after region transition service setup
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
-        pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, cacheManager.getUserCache()), this);
+        pluginManager.registerEvents(new PlayerListener(usersDataAccess, townsDataAccess, this.getCacheManager()), this);
     }
     
     /**

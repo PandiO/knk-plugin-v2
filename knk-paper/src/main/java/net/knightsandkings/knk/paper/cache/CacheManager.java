@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.logging.Logger;
 import net.knightsandkings.knk.core.cache.*;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
+import net.knightsandkings.knk.paper.config.KnkConfig;
+import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 
 /**
  * Centralized cache lifecycle manager for the Knights & Kings plugin.

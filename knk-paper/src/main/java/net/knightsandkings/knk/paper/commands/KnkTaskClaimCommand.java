@@ -12,8 +12,13 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 /**
- * Command: /knk task claim <id|linkCode>
+ * Command: /knk task claim <linkCode>
  * Claims a world task and starts the handler for the current player.
+ * 
+ * Best practice: Use the claim code displayed in the web app.
+ * Example: /knk task claim ABC123
+ * 
+ * Note: Task IDs are also supported for backwards compatibility.
  */
 public class KnkTaskClaimCommand implements CommandExecutor {
     private final Plugin plugin;
@@ -36,15 +41,21 @@ public class KnkTaskClaimCommand implements CommandExecutor {
         }
 
         if (args.length == 0) {
-            sender.sendMessage(ChatColor.RED + "Usage: /knk task claim <id|linkCode>");
+            sender.sendMessage(ChatColor.RED + "Usage: /knk task claim <linkCode>");
+            sender.sendMessage(ChatColor.GRAY + "Tip: Use the claim code from the web app (e.g., /knk task claim ABC123)");
             return true;
         }
 
         String idOrLinkCode = args[0];
-        sender.sendMessage(ChatColor.GRAY + "Claiming task: " + idOrLinkCode + "...");
-
+        
         // Determine if it's an ID or link code
         boolean isNumeric = idOrLinkCode.matches("\\d+");
+        
+        if (isNumeric) {
+            sender.sendMessage(ChatColor.YELLOW + "⚠ You're using a task ID. For better security, use the claim code from the web app.");
+        }
+        
+        sender.sendMessage(ChatColor.GRAY + "Claiming task: " + idOrLinkCode + "...");
 
         var taskFuture = isNumeric 
             ? worldTasksApi.getById(Integer.parseInt(idOrLinkCode))
@@ -54,6 +65,9 @@ public class KnkTaskClaimCommand implements CommandExecutor {
             if (task == null) {
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     sender.sendMessage(ChatColor.RED + "Task not found: " + idOrLinkCode);
+                    if (!isNumeric) {
+                        sender.sendMessage(ChatColor.GRAY + "Make sure you copied the claim code correctly from the web app.");
+                    }
                 });
                 return;
             }
@@ -62,15 +76,18 @@ public class KnkTaskClaimCommand implements CommandExecutor {
             if (!"Pending".equals(task.status())) {
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     sender.sendMessage(ChatColor.RED + "Task is not available (status: " + task.status() + ")");
+                    if (task.claimedByMinecraftUsername() != null) {
+                        sender.sendMessage(ChatColor.GRAY + "Already claimed by: " + task.claimedByMinecraftUsername());
+                    }
                 });
                 return;
             }
 
-            // Claim the task
-            worldTasksApi.claim(task.id(), serverId, player.getName()).thenAccept(claimedTask -> {
+            // Claim the task (pass linkCode for verification on backend)
+            worldTasksApi.claim(task.id(), task.linkCode(), serverId, player.getName()).thenAccept(claimedTask -> {
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    sender.sendMessage(ChatColor.GREEN + "✓ Task claimed: " + claimedTask.entityType() + "." + claimedTask.fieldName());
-                    sender.sendMessage(ChatColor.GRAY + "Link code: " + ChatColor.WHITE + claimedTask.linkCode());
+                    sender.sendMessage(ChatColor.GREEN + "✓ Successfully claimed task!");
+                    sender.sendMessage(ChatColor.GRAY + "Task: " + ChatColor.WHITE + claimedTask.entityType() + "." + claimedTask.fieldName());
 
                     // Start the handler if available
                     boolean started = handlerRegistry.startTask(
