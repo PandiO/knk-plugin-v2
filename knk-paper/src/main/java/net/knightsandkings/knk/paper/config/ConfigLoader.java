@@ -55,7 +55,34 @@ public class ConfigLoader {
             cacheConfig = KnkConfig.CacheConfig.defaultConfig();
         }
         
-        KnkConfig knkConfig = new KnkConfig(apiConfig, cacheConfig);
+        // Load account configuration (Phase 2+)
+        ConfigurationSection accountSection = config.getConfigurationSection("account");
+        if (accountSection == null) {
+            throw new IllegalArgumentException("Missing 'account' section in config.yml");
+        }
+        
+        KnkConfig.AccountConfig accountConfig = new KnkConfig.AccountConfig(
+            accountSection.getInt("link-code-expiry-minutes", 20),
+            accountSection.getInt("chat-capture-timeout-seconds", 120)
+        );
+        
+        // Load messages configuration (Phase 2+)
+        ConfigurationSection messagesSection = config.getConfigurationSection("messages");
+        if (messagesSection == null) {
+            throw new IllegalArgumentException("Missing 'messages' section in config.yml");
+        }
+        
+        KnkConfig.MessagesConfig messagesConfig = new KnkConfig.MessagesConfig(
+            messagesSection.getString("prefix", "&8[&6KnK&8] &r"),
+            messagesSection.getString("account-created", "&aAccount created successfully!"),
+            messagesSection.getString("account-linked", "&aYour accounts have been linked!"),
+            messagesSection.getString("link-code-generated", "&aYour link code is: &6{code}"),
+            messagesSection.getString("invalid-link-code", "&cThis code is invalid or has expired."),
+            messagesSection.getString("duplicate-account", "&cYou have two accounts. Please choose which one to keep."),
+            messagesSection.getString("merge-complete", "&aAccount merge complete. Your account now has {coins} coins, {gems} gems, and {exp} XP.")
+        );
+        
+        KnkConfig knkConfig = new KnkConfig(apiConfig, cacheConfig, accountConfig, messagesConfig);
         knkConfig.validate();
         
         return knkConfig;

@@ -37,7 +37,9 @@ import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
+import net.knightsandkings.knk.paper.listeners.UserAccountListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
+import net.knightsandkings.knk.paper.user.UserManager;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
@@ -54,6 +56,7 @@ public class KnKPlugin extends JavaPlugin {
     private UserAccountApi userAccountApi;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
+        private UserManager userManager;
     private ExecutorService regionLookupExecutor;
     
     @Override
@@ -106,6 +109,16 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("UsersQueryApi wired from API client");
             getLogger().info("UsersCommandApi wired from API client");
             getLogger().info("WorldTasksApi wired from API client");
+            
+                        // Initialize UserManager for account management (Phase 2)
+                        this.userManager = new UserManager(
+                            this,
+                            userAccountApi,
+                            getLogger(),
+                            config.account(),
+                            config.messages()
+                        );
+                        getLogger().info("UserManager initialized for account management");
             
             // Initialize WorldTask handler registry and register handlers
             this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
@@ -211,6 +224,8 @@ public class KnKPlugin extends JavaPlugin {
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
         pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, cacheManager.getUserCache()), this);
+        pluginManager.registerEvents(new UserAccountListener(userManager, config.messages(), getLogger()), this);
+        getLogger().info("Registered UserAccountListener for account management");
     }
     
     /**
@@ -253,6 +268,10 @@ public class KnKPlugin extends JavaPlugin {
 
     public UserAccountApi getUserAccountApi() {
         return userAccountApi;
+    }
+
+    public UserManager getUserManager() {
+        return userManager;
     }
 
     public WorldTasksApi getWorldTasksApi() {
