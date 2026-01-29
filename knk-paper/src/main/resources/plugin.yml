@@ -27,3 +27,11 @@ permissions:
   knk.account.use:
     description: Ability to use /account command
     default: true
+
+  knk.account.create:
+    description: Create account with email/password
+    default: true
+
+  knk.account.admin:
+    description: Admin account management
+    default: op

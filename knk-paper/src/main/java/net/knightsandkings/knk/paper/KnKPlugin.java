@@ -30,6 +30,7 @@ import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.cache.CacheManager;
+import net.knightsandkings.knk.paper.commands.AccountCommandRegistry;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
@@ -273,6 +274,20 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");
+        }
+
+        PluginCommand accountCommand = getCommand("account");
+        if (accountCommand != null) {
+            accountCommand.setExecutor(new AccountCommandRegistry(
+                this,
+                userManager,
+                chatCaptureManager,
+                userAccountApi,
+                config
+            ));
+            getLogger().info("Registered /account command");
+        } else {
+            getLogger().warning("Failed to register /account command - not defined in plugin.yml?");
         }
     }
     

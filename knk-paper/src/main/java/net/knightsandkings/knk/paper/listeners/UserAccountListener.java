@@ -152,10 +152,10 @@ public class UserAccountListener implements Listener {
             Component.text(messagesConfig.prefix())
                 .append(Component.text("Use ")
                     .color(NamedTextColor.GRAY))
-                .append(Component.text("/account merge")
+                .append(Component.text("/account link")
                     .color(NamedTextColor.GOLD)
                     .decorate(TextDecoration.UNDERLINED))
-                .append(Component.text(" to combine your accounts.")
+                .append(Component.text(" to resolve your accounts.")
                     .color(NamedTextColor.GRAY))
         );
         
