@@ -32,3 +32,30 @@ cache:
   # After this duration, cached data is considered stale and will be refetched
   # Recommended: 60-300 seconds (1-5 minutes) depending on data freshness requirements
   ttl-seconds: 60
+
+# Account management configuration
+account:
+  # Link code expiry time (in minutes)
+  # How long a generated link code remains valid
+  link-code-expiry-minutes: 20
+  
+  # Chat capture timeout (in seconds)
+  # Maximum time allowed for multi-step input flows (e.g., /account create)
+  chat-capture-timeout-seconds: 120
+
+# User-facing messages
+messages:
+  # Message prefix for all account-related messages
+  prefix: "&8[&6KnK&8] &r"
+  
+  # Success messages
+  account-created: "&aAccount created successfully! You can now log in on the web app."
+  account-linked: "&aYour accounts have been linked!"
+  link-code-generated: "&aYour link code is: &6{code}&a. Use this code in the web app. Expires in {minutes} minutes."
+  
+  # Error messages
+  invalid-link-code: "&cThis code is invalid or has expired. Use &6/account link &cto get a new one."
+  duplicate-account: "&cYou have two accounts. Please choose which one to keep."
+  
+  # Info messages
+  merge-complete: "&aAccount merge complete. Your account now has {coins} coins, {gems} gems, and {exp} XP."

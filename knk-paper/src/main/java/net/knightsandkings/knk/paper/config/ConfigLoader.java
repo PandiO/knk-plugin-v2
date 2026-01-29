@@ -55,7 +55,38 @@ public class ConfigLoader {
             cacheConfig = KnkConfig.CacheConfig.defaultConfig();
         }
         
-        KnkConfig knkConfig = new KnkConfig(apiConfig, cacheConfig);
+        // Load account configuration
+        ConfigurationSection accountSection = config.getConfigurationSection("account");
+        KnkConfig.AccountConfig accountConfig;
+        if (accountSection != null) {
+            accountConfig = new KnkConfig.AccountConfig(
+                accountSection.getInt("link-code-expiry-minutes", 20),
+                accountSection.getInt("chat-capture-timeout-seconds", 120)
+            );
+        } else {
+            // Use defaults if account section is missing
+            accountConfig = KnkConfig.AccountConfig.defaultConfig();
+        }
+        
+        // Load messages configuration
+        ConfigurationSection messagesSection = config.getConfigurationSection("messages");
+        KnkConfig.MessagesConfig messagesConfig;
+        if (messagesSection != null) {
+            messagesConfig = new KnkConfig.MessagesConfig(
+                messagesSection.getString("prefix", "&8[&6KnK&8] &r"),
+                messagesSection.getString("account-created", "&aAccount created successfully!"),
+                messagesSection.getString("account-linked", "&aYour accounts have been linked!"),
+                messagesSection.getString("link-code-generated", "&aYour link code is: &6{code}&a."),
+                messagesSection.getString("invalid-link-code", "&cThis code is invalid or has expired."),
+                messagesSection.getString("duplicate-account", "&cYou have two accounts."),
+                messagesSection.getString("merge-complete", "&aAccount merge complete.")
+            );
+        } else {
+            // Use defaults if messages section is missing
+            messagesConfig = KnkConfig.MessagesConfig.defaultConfig();
+        }
+        
+        KnkConfig knkConfig = new KnkConfig(apiConfig, cacheConfig, accountConfig, messagesConfig);
         knkConfig.validate();
         
         return knkConfig;

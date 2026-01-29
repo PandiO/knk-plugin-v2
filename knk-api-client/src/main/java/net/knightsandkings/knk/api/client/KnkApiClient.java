@@ -14,7 +14,9 @@ import net.knightsandkings.knk.api.impl.StructuresQueryApiImpl;
 import net.knightsandkings.knk.api.impl.DomainsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.UsersQueryApiImpl;
 import net.knightsandkings.knk.api.impl.UsersCommandApiImpl;
+import net.knightsandkings.knk.api.impl.UserAccountApiImpl;
 import net.knightsandkings.knk.api.impl.WorldTasksApiImpl;
+import net.knightsandkings.knk.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -54,6 +56,7 @@ public class KnkApiClient {
     private final DomainsQueryApi domainsQueryApi;
     private final UsersQueryApi usersQueryApi;
     private final UsersCommandApi usersCommandApi;
+    private final UserAccountApi userAccountApi;
     private final WorldTasksApi worldTasksApi;
     
     private KnkApiClient(
@@ -79,6 +82,7 @@ public class KnkApiClient {
         this.structuresQueryApi = new StructuresQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.domainsQueryApi = new DomainsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.usersQueryApi = new UsersQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.userAccountApi = new UserAccountApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.usersCommandApi = new UsersCommandApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.worldTasksApi = new WorldTasksApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
@@ -117,6 +121,10 @@ public class KnkApiClient {
 
     public UsersCommandApi getUsersCommandApi() {
         return usersCommandApi;
+    }
+    
+    public UserAccountApi getUserAccountApi() {
+        return userAccountApi;
     }
     
     public WorldTasksApi getWorldTasksApi() {
