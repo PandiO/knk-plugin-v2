@@ -37,6 +37,8 @@ import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
+import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
+import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.user.UserManager;
@@ -56,7 +58,8 @@ public class KnKPlugin extends JavaPlugin {
     private UserAccountApi userAccountApi;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
-        private UserManager userManager;
+    private UserManager userManager;
+    private ChatCaptureManager chatCaptureManager;
     private ExecutorService regionLookupExecutor;
     
     @Override
@@ -119,6 +122,17 @@ public class KnKPlugin extends JavaPlugin {
                             config.messages()
                         );
                         getLogger().info("UserManager initialized for account management");
+            
+            // Initialize ChatCaptureManager for secure input (Phase 3)
+            this.chatCaptureManager = new ChatCaptureManager(this, config, getLogger());
+            getLogger().info("ChatCaptureManager initialized for secure chat input");
+            
+            // Register chat capture listener
+            getServer().getPluginManager().registerEvents(
+                new ChatCaptureListener(chatCaptureManager),
+                this
+            );
+            getLogger().info("ChatCaptureListener registered");
             
             // Initialize WorldTask handler registry and register handlers
             this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
@@ -272,6 +286,10 @@ public class KnKPlugin extends JavaPlugin {
 
     public UserManager getUserManager() {
         return userManager;
+    }
+
+    public ChatCaptureManager getChatCaptureManager() {
+        return chatCaptureManager;
     }
 
     public WorldTasksApi getWorldTasksApi() {
