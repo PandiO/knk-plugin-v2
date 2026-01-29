@@ -35,6 +35,24 @@ account:
   # Chat capture timeout (in seconds)
   # Maximum time to wait for player chat input during account creation
   chat-capture-timeout-seconds: 120
+  
+  # Command cooldowns (Phase 5) - Prevents spam and rate limits expensive operations
+  cooldowns:
+    # Cooldown for /account create command (seconds)
+    # Prevents players from spamming account creation
+    account-create-seconds: 300  # 5 minutes
+    
+    # Cooldown for generating link codes (seconds)
+    # Rate limit for /account link (no args)
+    link-code-generate-seconds: 60  # 1 minute
+    
+    # Cooldown for consuming link codes (seconds)
+    # Rate limit for /account link <code>
+    link-code-consume-seconds: 10  # 10 seconds
+    
+    # Cleanup interval for expired cooldowns (minutes)
+    # How often to remove stale cooldown entries from memory
+    cleanup-interval-minutes: 5
 
 # Messages configuration
 messages:

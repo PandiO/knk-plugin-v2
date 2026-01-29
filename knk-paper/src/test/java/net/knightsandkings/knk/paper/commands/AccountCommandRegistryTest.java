@@ -6,6 +6,7 @@ import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.user.PlayerUserData;
 import net.knightsandkings.knk.paper.user.UserManager;
+import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ class AccountCommandRegistryTest {
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
     private UserAccountApi userAccountApi;
+    private CommandCooldownManager cooldownManager;
 
     @BeforeEach
     void setUp() {
@@ -30,6 +32,10 @@ class AccountCommandRegistryTest {
         userManager = mock(UserManager.class);
         chatCaptureManager = mock(ChatCaptureManager.class);
         userAccountApi = mock(UserAccountApi.class);
+        cooldownManager = mock(CommandCooldownManager.class);
+        
+        // Mock cooldown manager to always allow execution
+        when(cooldownManager.canExecute(any(), anyString(), anyInt())).thenReturn(true);
     }
 
     @Test
@@ -39,7 +45,8 @@ class AccountCommandRegistryTest {
             userManager,
             chatCaptureManager,
             userAccountApi,
-            config
+            config,
+            cooldownManager
         );
 
         Player player = mock(Player.class);
@@ -75,7 +82,8 @@ class AccountCommandRegistryTest {
             userManager,
             chatCaptureManager,
             userAccountApi,
-            config
+            config,
+            cooldownManager
         );
 
         CommandSender sender = mock(CommandSender.class);
@@ -93,7 +101,8 @@ class AccountCommandRegistryTest {
             userManager,
             chatCaptureManager,
             userAccountApi,
-            config
+            config,
+            cooldownManager
         );
 
         CommandSender sender = mock(CommandSender.class);
@@ -108,7 +117,8 @@ class AccountCommandRegistryTest {
         KnkConfig.TimeoutsConfig timeouts = new KnkConfig.TimeoutsConfig(1, 1, 1);
         KnkConfig.ApiConfig api = new KnkConfig.ApiConfig("http://localhost", false, false, auth, timeouts);
         KnkConfig.CacheConfig cache = new KnkConfig.CacheConfig(60);
-        KnkConfig.AccountConfig account = new KnkConfig.AccountConfig(20, 120);
+        KnkConfig.AccountConfig.CooldownsConfig cooldowns = new KnkConfig.AccountConfig.CooldownsConfig(300, 60, 10, 5);
+        KnkConfig.AccountConfig account = new KnkConfig.AccountConfig(20, 120, cooldowns);
         KnkConfig.MessagesConfig messages = new KnkConfig.MessagesConfig(
             "&8[&6KnK&8] &r",
             "&aAccount created successfully!",

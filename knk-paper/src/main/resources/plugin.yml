@@ -24,14 +24,29 @@ permissions:
     description: Access to KnK admin commands
     default: op
 
+  # Account management permissions (Phase 4+)
   knk.account.use:
-    description: Ability to use /account command
+    description: Ability to use /account command (view status)
     default: true
 
   knk.account.create:
-    description: Create account with email/password
+    description: Create account with email/password via /account create
+    default: true
+    
+  knk.account.link:
+    description: Generate or consume link codes via /account link
     default: true
 
   knk.account.admin:
-    description: Admin account management
+    description: Admin account management (future: view/modify other players' accounts)
     default: op
+    
+  # Wildcard permissions
+  knk.account.*:
+    description: All account management permissions
+    default: false
+    children:
+      knk.account.use: true
+      knk.account.create: true
+      knk.account.link: true
+      knk.account.admin: true

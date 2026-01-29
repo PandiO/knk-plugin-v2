@@ -12,6 +12,7 @@ import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.user.UserManager;
+import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 
 /**
  * Command dispatcher for /account commands.
@@ -26,7 +27,8 @@ public class AccountCommandRegistry implements CommandExecutor {
         UserManager userManager,
         ChatCaptureManager chatCaptureManager,
         UserAccountApi userAccountApi,
-        KnkConfig config
+        KnkConfig config,
+        CommandCooldownManager cooldownManager
     ) {
         this.config = config;
 
@@ -36,14 +38,16 @@ public class AccountCommandRegistry implements CommandExecutor {
             userManager,
             chatCaptureManager,
             userAccountApi,
-            config
+            config,
+            cooldownManager
         );
         AccountLinkCommand accountLinkCommand = new AccountLinkCommand(
             plugin,
             userManager,
             chatCaptureManager,
             userAccountApi,
-            config
+            config,
+            cooldownManager
         );
 
         registry.register(

@@ -44,6 +44,8 @@ public class ChatCaptureManager {
             Consumer<Map<String, String>> onComplete,
             Runnable onCancel) {
         
+        logger.info("Starting account creation flow for " + player.getName());
+        
         ChatCaptureSession session = new ChatCaptureSession(
             player.getUniqueId(),
             CaptureFlow.ACCOUNT_CREATE,
@@ -161,23 +163,27 @@ public class ChatCaptureManager {
             case EMAIL:
                 if (!isValidEmail(input)) {
                     player.sendMessage(prefix + "§cInvalid email format. Please try again.");
+                    logger.fine(player.getName() + " provided invalid email format during account creation");
                     return;
                 }
                 session.putData("email", input);
                 session.setCurrentStep(CaptureStep.PASSWORD);
                 player.sendMessage(prefix + "§aEmail saved!");
                 player.sendMessage(prefix + "§eStep 2/3: Enter your password (min 8 characters)");
+                logger.fine(player.getName() + " completed email step in account creation");
                 break;
                 
             case PASSWORD:
                 if (input.length() < 8) {
                     player.sendMessage(prefix + "§cPassword must be at least 8 characters. Try again.");
+                    logger.fine(player.getName() + " provided password too short during account creation");
                     return;
                 }
                 session.putData("password", input);
                 session.setCurrentStep(CaptureStep.PASSWORD_CONFIRM);
                 player.sendMessage(prefix + "§aPassword saved!");
                 player.sendMessage(prefix + "§eStep 3/3: Confirm your password");
+                logger.fine(player.getName() + " completed password step in account creation");
                 break;
                 
             case PASSWORD_CONFIRM:
@@ -186,10 +192,12 @@ public class ChatCaptureManager {
                     session.setCurrentStep(CaptureStep.PASSWORD);
                     session.getData().remove("password");
                     player.sendMessage(prefix + "§eStep 2/3: Enter your password (min 8 characters)");
+                    logger.fine(player.getName() + " password mismatch during account creation, restarting password flow");
                     return;
                 }
                 
                 // Complete
+                logger.info(player.getName() + " completed account creation chat flow");
                 completeSession(player, session);
                 break;
                 
@@ -243,6 +251,8 @@ public class ChatCaptureManager {
         if (session == null) {
             return;
         }
+        
+        logger.info(player.getName() + " cancelled chat capture session (flow: " + session.getFlow() + ")");
         
         String prefix = config.messages().prefix();
         player.sendMessage(prefix + "§cCancelled.");

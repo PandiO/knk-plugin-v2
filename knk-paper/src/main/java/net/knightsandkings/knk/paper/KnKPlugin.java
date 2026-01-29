@@ -43,6 +43,7 @@ import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.user.UserManager;
+import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
@@ -61,6 +62,7 @@ public class KnKPlugin extends JavaPlugin {
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
+    private CommandCooldownManager cooldownManager;
     private ExecutorService regionLookupExecutor;
     
     @Override
@@ -127,6 +129,21 @@ public class KnKPlugin extends JavaPlugin {
             // Initialize ChatCaptureManager for secure input (Phase 3)
             this.chatCaptureManager = new ChatCaptureManager(this, config, getLogger());
             getLogger().info("ChatCaptureManager initialized for secure chat input");
+            
+            // Initialize CommandCooldownManager for rate limiting (Phase 5)
+            this.cooldownManager = new CommandCooldownManager(getLogger());
+            getLogger().info("CommandCooldownManager initialized for rate limiting");
+            
+            // Start cooldown cleanup task (runs every N minutes as configured)
+            int cleanupInterval = config.account().cooldowns().cleanupIntervalMinutes();
+            int cleanupTicks = cleanupInterval * 60 * 20; // Convert minutes to ticks (20 ticks/sec)
+            getServer().getScheduler().runTaskTimerAsynchronously(
+                this,
+                () -> cooldownManager.cleanup(3600), // Remove cooldowns older than 1 hour
+                cleanupTicks,
+                cleanupTicks
+            );
+            getLogger().info("Cooldown cleanup task scheduled (every " + cleanupInterval + " minutes)");
             
             // Register chat capture listener
             getServer().getPluginManager().registerEvents(
@@ -283,9 +300,10 @@ public class KnKPlugin extends JavaPlugin {
                 userManager,
                 chatCaptureManager,
                 userAccountApi,
-                config
+                config,
+                cooldownManager
             ));
-            getLogger().info("Registered /account command");
+            getLogger().info("Registered /account command with cooldown management");
         } else {
             getLogger().warning("Failed to register /account command - not defined in plugin.yml?");
         }
@@ -305,6 +323,10 @@ public class KnKPlugin extends JavaPlugin {
 
     public ChatCaptureManager getChatCaptureManager() {
         return chatCaptureManager;
+    }
+    
+    public CommandCooldownManager getCooldownManager() {
+        return cooldownManager;
     }
 
     public WorldTasksApi getWorldTasksApi() {

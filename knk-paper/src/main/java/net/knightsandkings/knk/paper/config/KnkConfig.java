@@ -117,11 +117,12 @@ public record KnkConfig(
     
     /**
      * Account management configuration (Phase 2+).
-     * Controls account linking, chat capture timeouts, and related settings.
+     * Controls account linking, chat capture timeouts, cooldowns, and related settings.
      */
     public record AccountConfig(
         int linkCodeExpiryMinutes,
-        int chatCaptureTimeoutSeconds
+        int chatCaptureTimeoutSeconds,
+        CooldownsConfig cooldowns
     ) {
         /**
          * Validate account configuration values.
@@ -148,6 +149,10 @@ public record KnkConfig(
                     "account.chat-capture-timeout-seconds must not exceed 300 (5 minutes) (got: " + chatCaptureTimeoutSeconds + ")"
                 );
             }
+            if (cooldowns == null) {
+                throw new IllegalArgumentException("account.cooldowns configuration is required");
+            }
+            cooldowns.validate();
         }
         
         /**
@@ -162,6 +167,43 @@ public record KnkConfig(
          */
         public Duration chatCaptureTimeout() {
             return Duration.ofSeconds(chatCaptureTimeoutSeconds);
+        }
+        
+        /**
+         * Cooldown configuration for account commands.
+         * Prevents spam and rate limits expensive operations.
+         */
+        public record CooldownsConfig(
+            int accountCreateSeconds,
+            int linkCodeGenerateSeconds,
+            int linkCodeConsumeSeconds,
+            int cleanupIntervalMinutes
+        ) {
+            /**
+             * Validate cooldown configuration values.
+             */
+            public void validate() {
+                if (accountCreateSeconds < 0) {
+                    throw new IllegalArgumentException(
+                        "account.cooldowns.account-create-seconds must be non-negative (got: " + accountCreateSeconds + ")"
+                    );
+                }
+                if (linkCodeGenerateSeconds < 0) {
+                    throw new IllegalArgumentException(
+                        "account.cooldowns.link-code-generate-seconds must be non-negative (got: " + linkCodeGenerateSeconds + ")"
+                    );
+                }
+                if (linkCodeConsumeSeconds < 0) {
+                    throw new IllegalArgumentException(
+                        "account.cooldowns.link-code-consume-seconds must be non-negative (got: " + linkCodeConsumeSeconds + ")"
+                    );
+                }
+                if (cleanupIntervalMinutes < 1) {
+                    throw new IllegalArgumentException(
+                        "account.cooldowns.cleanup-interval-minutes must be at least 1 (got: " + cleanupIntervalMinutes + ")"
+                    );
+                }
+            }
         }
     }
     

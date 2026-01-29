@@ -16,6 +16,7 @@ import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.user.PlayerUserData;
 import net.knightsandkings.knk.paper.user.UserManager;
+import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 
 /**
  * Command handler for /account create.
@@ -27,19 +28,22 @@ public class AccountCreateCommand implements CommandExecutor {
     private final ChatCaptureManager chatCaptureManager;
     private final UserAccountApi userAccountApi;
     private final KnkConfig config;
+    private final CommandCooldownManager cooldownManager;
 
     public AccountCreateCommand(
         KnKPlugin plugin,
         UserManager userManager,
         ChatCaptureManager chatCaptureManager,
         UserAccountApi userAccountApi,
-        KnkConfig config
+        KnkConfig config,
+        CommandCooldownManager cooldownManager
     ) {
         this.plugin = plugin;
         this.userManager = userManager;
         this.chatCaptureManager = chatCaptureManager;
         this.userAccountApi = userAccountApi;
         this.config = config;
+        this.cooldownManager = cooldownManager;
     }
 
     @Override
@@ -49,17 +53,31 @@ public class AccountCreateCommand implements CommandExecutor {
             return true;
         }
 
+        // Check cooldown
+        int cooldownSeconds = config.account().cooldowns().accountCreateSeconds();
+        if (!cooldownManager.canExecute(player.getUniqueId(), "account.create", cooldownSeconds)) {
+            int remaining = cooldownManager.getRemainingCooldown(player.getUniqueId(), "account.create", cooldownSeconds);
+            sendPrefixed(player, "&cPlease wait " + remaining + " seconds before creating another account.");
+            plugin.getLogger().fine(player.getName() + " attempted /account create but is on cooldown (" + remaining + "s remaining)");
+            return true;
+        }
+
         PlayerUserData userData = userManager.getCachedUser(player.getUniqueId());
         if (userData == null) {
             sendPrefixed(player, "&cPlease rejoin the server and try again");
+            plugin.getLogger().warning("Player " + player.getName() + " has no cached user data for /account create");
             return true;
         }
 
         if (userData.hasEmailLinked()) {
             sendPrefixed(player, "&cYou already have an email linked!");
             sendPrefixed(player, "&eUse &6/account &eto view your account");
+            plugin.getLogger().fine(player.getName() + " attempted /account create but already has email linked");
             return true;
         }
+
+        // Log command execution start
+        plugin.getLogger().info(player.getName() + " started /account create flow");
 
         chatCaptureManager.startAccountCreateFlow(
             player,
@@ -75,30 +93,47 @@ public class AccountCreateCommand implements CommandExecutor {
         String password = data.get("password");
 
         if (email == null || password == null) {
+            plugin.getLogger().warning("Account creation for " + player.getName() + " failed: missing email or password");
             runSync(() -> sendPrefixed(player, "&cMissing account details. Please try again."));
             return;
         }
 
         if (userData.userId() == null) {
+            plugin.getLogger().warning("Account creation for " + player.getName() + " failed: user ID not available");
             runSync(() -> sendPrefixed(player, "&cAccount not ready yet. Please rejoin and try again."));
             return;
         }
 
         Integer userId = userData.userId();
+        plugin.getLogger().info("Processing account creation for " + player.getName() + " (ID: " + userId + ", email: " + email + ")");
+
+        // Record cooldown at start of API calls
+        cooldownManager.recordExecution(player.getUniqueId(), "account.create");
 
         userAccountApi.updateEmail(userId, email)
-            .thenCompose(v -> userAccountApi.changePassword(
-                userId,
-                new ChangePasswordRequestDto("", password, password)
-            ))
+            .thenCompose(v -> {
+                plugin.getLogger().fine("Email updated for " + player.getName() + ", proceeding to password change");
+                return userAccountApi.changePassword(
+                    userId,
+                    new ChangePasswordRequestDto("", password, password)
+                );
+            })
             .thenRun(() -> runSync(() -> {
                 PlayerUserData updated = userData.withEmailLinked(email);
                 userManager.updateCachedUser(player.getUniqueId(), updated);
                 sendPrefixed(player, config.messages().accountCreated());
+                plugin.getLogger().info("Account creation complete for " + player.getName() + " (email: " + email + ")");
             }))
             .exceptionally(ex -> {
                 plugin.getLogger().severe("Failed to create account for " + player.getName() + ": " + ex.getMessage());
-                runSync(() -> sendPrefixed(player, "&cFailed to create account. Please try again later."));
+                if (ex.getCause() != null) {
+                    plugin.getLogger().severe("  Cause: " + ex.getCause().getMessage());
+                }
+                runSync(() -> {
+                    sendPrefixed(player, "&cFailed to create account. Please try again later.");
+                    // Reset cooldown on failure so player can retry
+                    cooldownManager.resetCooldown(player.getUniqueId(), "account.create");
+                });
                 return null;
             });
     }

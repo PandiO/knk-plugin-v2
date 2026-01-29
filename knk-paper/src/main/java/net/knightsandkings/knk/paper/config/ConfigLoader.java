@@ -61,9 +61,25 @@ public class ConfigLoader {
             throw new IllegalArgumentException("Missing 'account' section in config.yml");
         }
         
+        // Load cooldowns configuration (Phase 5)
+        ConfigurationSection cooldownsSection = accountSection.getConfigurationSection("cooldowns");
+        KnkConfig.AccountConfig.CooldownsConfig cooldownsConfig;
+        if (cooldownsSection != null) {
+            cooldownsConfig = new KnkConfig.AccountConfig.CooldownsConfig(
+                cooldownsSection.getInt("account-create-seconds", 300),
+                cooldownsSection.getInt("link-code-generate-seconds", 60),
+                cooldownsSection.getInt("link-code-consume-seconds", 10),
+                cooldownsSection.getInt("cleanup-interval-minutes", 5)
+            );
+        } else {
+            // Default cooldowns if section missing
+            cooldownsConfig = new KnkConfig.AccountConfig.CooldownsConfig(300, 60, 10, 5);
+        }
+        
         KnkConfig.AccountConfig accountConfig = new KnkConfig.AccountConfig(
             accountSection.getInt("link-code-expiry-minutes", 20),
-            accountSection.getInt("chat-capture-timeout-seconds", 120)
+            accountSection.getInt("chat-capture-timeout-seconds", 120),
+            cooldownsConfig
         );
         
         // Load messages configuration (Phase 2+)
