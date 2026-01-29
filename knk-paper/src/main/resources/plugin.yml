@@ -12,8 +12,18 @@ commands:
     description: KnK admin and debug commands
     usage: /knk help
     permission: knk.admin
+
+  account:
+    description: "Manage your in-game account (create, link, view status)"
+    usage: "/account [create|link|status]"
+    aliases: [acc]
+    permission: knk.account.use
     
 permissions:
   knk.admin:
     description: Access to KnK admin commands
     default: op
+
+  knk.account.use:
+    description: Ability to use /account command
+    default: true

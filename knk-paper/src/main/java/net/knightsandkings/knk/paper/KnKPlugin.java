@@ -12,12 +12,14 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
+import net.knightsandkings.knk.api.client.KnkApiClientAdapter;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
@@ -49,6 +51,7 @@ public class KnKPlugin extends JavaPlugin {
     private DomainsQueryApi domainsQueryApi;
     private UsersQueryApi usersQueryApi;
     private UsersCommandApi usersCommandApi;
+    private UserAccountApi userAccountApi;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private ExecutorService regionLookupExecutor;
@@ -90,6 +93,9 @@ public class KnKPlugin extends JavaPlugin {
             this.domainsQueryApi = apiClient.getDomainsQueryApi();
             this.usersQueryApi = apiClient.getUsersQueryApi();
             this.usersCommandApi = apiClient.getUsersCommandApi();
+            // Gradle compilation workaround: Use adapter to access UserAccountApi
+            KnkApiClientAdapter adapter = new KnkApiClientAdapter(apiClient);
+            this.userAccountApi = adapter.getUserAccountApi();
             this.worldTasksApi = apiClient.getWorldTasksApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
@@ -241,6 +247,18 @@ public class KnKPlugin extends JavaPlugin {
         }
     }
     
+    public UsersCommandApi getUsersCommandApi() {
+        return usersCommandApi;
+    }
+
+    public UserAccountApi getUserAccountApi() {
+        return userAccountApi;
+    }
+
+    public WorldTasksApi getWorldTasksApi() {
+        return worldTasksApi;
+    }
+
     private AuthProvider createAuthProvider(KnkConfig.AuthConfig authConfig) {
         String type = authConfig.type().toLowerCase();
         return switch (type) {
