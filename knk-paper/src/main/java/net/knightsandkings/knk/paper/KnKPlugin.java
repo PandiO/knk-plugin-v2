@@ -12,7 +12,6 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
-import net.knightsandkings.knk.api.client.KnkApiClientAdapter;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -102,9 +101,7 @@ public class KnKPlugin extends JavaPlugin {
             this.domainsQueryApi = apiClient.getDomainsQueryApi();
             this.usersQueryApi = apiClient.getUsersQueryApi();
             this.usersCommandApi = apiClient.getUsersCommandApi();
-            // Gradle compilation workaround: Use adapter to access UserAccountApi
-            KnkApiClientAdapter adapter = new KnkApiClientAdapter(apiClient);
-            this.userAccountApi = adapter.getUserAccountApi();
+            this.userAccountApi = apiClient.getUserAccountApi();
             this.worldTasksApi = apiClient.getWorldTasksApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
@@ -120,6 +117,7 @@ public class KnKPlugin extends JavaPlugin {
                         this.userManager = new UserManager(
                             this,
                             userAccountApi,
+                            usersQueryApi,
                             getLogger(),
                             config.account(),
                             config.messages()

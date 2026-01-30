@@ -9,7 +9,9 @@ import org.bukkit.entity.Player;
 import net.knightsandkings.knk.api.dto.CreateUserRequestDto;
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
+import net.knightsandkings.knk.core.domain.users.UserSummary;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
+import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 
@@ -30,6 +32,7 @@ import net.knightsandkings.knk.paper.config.KnkConfig;
 public class UserManager {
     private final KnKPlugin plugin;
     private final UserAccountApi userAccountApi;
+    private final UsersQueryApi usersQueryApi;
     private final Logger logger;
     private final KnkConfig.AccountConfig accountConfig;
     private final KnkConfig.MessagesConfig messagesConfig;
@@ -40,12 +43,14 @@ public class UserManager {
     public UserManager(
         KnKPlugin plugin,
         UserAccountApi userAccountApi,
+        UsersQueryApi usersQueryApi,
         Logger logger,
         KnkConfig.AccountConfig accountConfig,
         KnkConfig.MessagesConfig messagesConfig
     ) {
         this.plugin = plugin;
         this.userAccountApi = userAccountApi;
+        this.usersQueryApi = usersQueryApi;
         this.logger = logger;
         this.accountConfig = accountConfig;
         this.messagesConfig = messagesConfig;
@@ -138,6 +143,20 @@ public class UserManager {
         String username = player.getName();
         
         try {
+            // Check if user already exists by UUID
+            UserSummary existingByUuid = usersQueryApi.getByUuid(uuid).join();
+            if (existingByUuid != null) {
+                logger.info("User already exists for UUID " + uuid + ": " + existingByUuid.username());
+                return mapToPlayerUserData(existingByUuid, uuid);
+            }
+
+            // Check if user exists by username (web app first flow)
+            UserSummary existingByUsername = usersQueryApi.getByUsername(username).join();
+            if (existingByUsername != null && existingByUsername.uuid() != null) {
+                logger.info("User already exists for username " + username + " with UUID");
+                return mapToPlayerUserData(existingByUsername, uuid);
+            }
+
             // Create minimal user via API
             CreateUserRequestDto request = CreateUserRequestDto.minimalUser(
                 uuid.toString(),
@@ -176,6 +195,21 @@ public class UserManager {
             response.experiencePoints() != null ? response.experiencePoints() : 0,
             response.email() != null && !response.email().isBlank(),
             false,  // no duplicate if we got here
+            null
+        );
+    }
+
+    private PlayerUserData mapToPlayerUserData(UserSummary summary, UUID uuid) {
+        return new PlayerUserData(
+            summary.id(),
+            summary.username(),
+            uuid,
+            null,
+            summary.coins(),
+            0,
+            0,
+            false,
+            false,
             null
         );
     }

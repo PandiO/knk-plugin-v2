@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.dto.ChangePasswordRequestDto;
 import net.knightsandkings.knk.api.dto.CreateUserRequestDto;
+import net.knightsandkings.knk.api.dto.CreateUserResponseDto;
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
 import net.knightsandkings.knk.api.dto.LinkAccountRequestDto;
 import net.knightsandkings.knk.api.dto.LinkCodeResponseDto;
@@ -44,6 +45,10 @@ public class UserAccountApiImpl extends BaseApiImpl implements UserAccountApi {
                 String json = objectMapper.writeValueAsString(request);
                 String url = baseUrl + "/Users";
                 String response = postJson(url, json);
+                CreateUserResponseDto wrapped = parse(response, CreateUserResponseDto.class, url);
+                if (wrapped != null && wrapped.user() != null) {
+                    return wrapped.user();
+                }
                 return parse(response, UserResponseDto.class, url);
             } catch (IOException | ApiException ex) {
                 throw new RuntimeException("Failed to create user", ex);

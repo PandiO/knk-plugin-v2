@@ -19,11 +19,14 @@ import net.knightsandkings.knk.api.dto.UserResponseDto;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.config.KnkConfig;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for UserManager.
  * Tests user account lifecycle management, caching, and duplicate detection.
  */
+@ExtendWith(MockitoExtension.class)
 class UserManagerTest {
 
     private UserManager userManager;

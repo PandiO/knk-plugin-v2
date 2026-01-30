@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Nested;
 import org.mockito.ArgumentCaptor;
 
 import net.knightsandkings.knk.paper.config.KnkConfig;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for ChatCaptureManager.

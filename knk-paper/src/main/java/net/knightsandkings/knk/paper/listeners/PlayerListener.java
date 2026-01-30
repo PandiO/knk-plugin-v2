@@ -59,7 +59,8 @@ public class PlayerListener implements Listener {
 						LOGGER.severe("Failed to create new user " + uuid + ": " + ex.getMessage());
 						return;
 					}
-					UserSummary createdSummary = new UserSummary(createdUser.id(), createdUser.username(), createdUser.uuid(), createdUser.coins(), true);
+					int coins = createdUser.coins() != null ? createdUser.coins() : 0;
+					UserSummary createdSummary = new UserSummary(createdUser.id(), createdUser.username(), createdUser.uuid(), coins, true);
 					userCache.put(createdSummary);
 					LOGGER.info("Created and cached new user " + createdUser.username() + " (UUID: " + uuid + ")");
 				}).join();

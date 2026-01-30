@@ -24,11 +24,14 @@ import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.user.PlayerUserData;
 import net.knightsandkings.knk.paper.user.UserManager;
 import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Integration tests for account management command flows.
  * Tests the full lifecycle from command execution to API calls.
  */
+@ExtendWith(MockitoExtension.class)
 class AccountCommandIntegrationTest {
 
     private UserAccountApi mockApi;

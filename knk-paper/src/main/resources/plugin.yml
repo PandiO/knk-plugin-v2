@@ -1,4 +1,5 @@
 name: KnightsAndKings
+api: "1.21"
 version: 0.1.0
 main: net.knightsandkings.knk.paper.KnKPlugin
 api-version: "1.21"
@@ -38,15 +39,5 @@ permissions:
     default: true
 
   knk.account.admin:
-    description: Admin account management (future: view/modify other players' accounts)
+    description: Admin account management (future view/modify other players' accounts)
     default: op
-    
-  # Wildcard permissions
-  knk.account.*:
-    description: All account management permissions
-    default: false
-    children:
-      knk.account.use: true
-      knk.account.create: true
-      knk.account.link: true
-      knk.account.admin: true
