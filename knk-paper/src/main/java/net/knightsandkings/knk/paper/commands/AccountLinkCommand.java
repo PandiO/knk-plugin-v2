@@ -8,7 +8,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
-import net.knightsandkings.knk.api.dto.LinkAccountRequestDto;
 import net.knightsandkings.knk.api.dto.LinkCodeResponseDto;
 import net.knightsandkings.knk.api.dto.MergeAccountsRequestDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
@@ -133,44 +132,58 @@ public class AccountLinkCommand implements CommandExecutor {
 
         plugin.getLogger().info(player.getName() + " attempting to consume link code: " + code);
         cooldownManager.recordExecution(player.getUniqueId(), "link.consume");
+        
+        // Validate link code (minecraft-first flow)
         userAccountApi.validateLinkCode(code)
-            .thenCompose(validationObj -> {
+            .thenAccept(validationObj -> {
                 ValidateLinkCodeResponseDto validation = (ValidateLinkCodeResponseDto) validationObj;
                 if (!Boolean.TRUE.equals(validation.isValid())) {
                     plugin.getLogger().info("Invalid link code provided by " + player.getName() + ": " + code);
-                    runSync(() -> sendPrefixed(player, config.messages().invalidLinkCode()));
-                    return java.util.concurrent.CompletableFuture.completedFuture(null);
+                    runSync(() -> {
+                        sendPrefixed(player, config.messages().invalidLinkCode());
+                        // Reset cooldown on failure
+                        cooldownManager.resetCooldown(player.getUniqueId(), "link.consume");
+                    });
+                    return;
                 }
 
-                plugin.getLogger().fine("Link code validated for " + player.getName() + ", checking for duplicates");
-
-                return userAccountApi.checkDuplicate(player.getUniqueId().toString(), player.getName())
-                    .thenCompose(duplicateObj -> {
-                        DuplicateCheckResponseDto duplicate = (DuplicateCheckResponseDto) duplicateObj;
-
-                        if (Boolean.TRUE.equals(duplicate.hasDuplicate())) {
-                            plugin.getLogger().info("Duplicate accounts detected for " + player.getName() + ", starting merge flow");
-                            runSync(() -> startMergeFlow(player, duplicate));
-                            return java.util.concurrent.CompletableFuture.completedFuture(null);
-                        }
-
-                        plugin.getLogger().fine("No duplicates for " + player.getName() + ", proceeding to link account");
-                        String email = validation.email() != null ? validation.email() : "";
-                        LinkAccountRequestDto request = new LinkAccountRequestDto(code, email, "", "");
-
-                        return userAccountApi.linkAccount(request)
-                            .thenAccept(linkedObj -> {
-                                UserResponseDto linked = (UserResponseDto) linkedObj;
-                                runSync(() -> {
-                                    updateCachedUser(player, userData, linked);
-                                    sendPrefixed(player, config.messages().accountLinked());
-                                    plugin.getLogger().info("Account linked successfully for " + player.getName() + " (email: " + email + ")");
-                                });
-                            });
+                // Link code is valid - retrieve the web account user ID
+                Integer webAccountUserId = validation.userId();
+                if (webAccountUserId == null) {
+                    plugin.getLogger().warning("Link code validation returned null userId for " + player.getName());
+                    runSync(() -> {
+                        sendPrefixed(player, "&cLink code validation failed: missing account information");
+                        // Reset cooldown on failure
+                        cooldownManager.resetCooldown(player.getUniqueId(), "link.consume");
                     });
+                    return;
+                }
+
+                plugin.getLogger().fine("Link code validated for " + player.getName() + " (web account ID: " + webAccountUserId + ")");
+                
+                // Update cached user with linked account information
+                runSync(() -> {
+                    // Create updated user data with linked account info
+                    PlayerUserData updated = new PlayerUserData(
+                        userData != null ? userData.userId() : null,
+                        validation.username() != null ? validation.username() : (userData != null ? userData.username() : player.getName()),
+                        player.getUniqueId(),
+                        validation.email(),
+                        userData != null ? userData.coins() : 0,
+                        userData != null ? userData.gems() : 0,
+                        userData != null ? userData.experiencePoints() : 0,
+                        validation.email() != null && !validation.email().isBlank(),
+                        false,
+                        null
+                    );
+                    
+                    userManager.updateCachedUser(player.getUniqueId(), updated);
+                    sendPrefixed(player, config.messages().accountLinked());
+                    plugin.getLogger().info("Account linked successfully for " + player.getName() + " (web account: " + validation.email() + ")");
+                });
             })
             .exceptionally(ex -> {
-                plugin.getLogger().severe("Failed to consume link code for " + player.getName() + ": " + ex.getMessage());
+                plugin.getLogger().severe("Failed to validate link code for " + player.getName() + ": " + ex.getMessage());
                 if (ex.getCause() != null) {
                     plugin.getLogger().severe("  Cause: " + ex.getCause().getMessage());
                 }
