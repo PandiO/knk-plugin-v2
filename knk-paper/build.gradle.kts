@@ -29,9 +29,14 @@ tasks.test {
     useJUnitPlatform()
 }
 
-val devPluginsDir = rootProject.layout.projectDirectory
-    .dir(devServerDirPath)
-    .dir("plugins")
+val devPluginsDir: File = try {
+    rootProject.layout.projectDirectory
+        .dir(devServerDirPath)
+        .dir("plugins")
+        .asFile
+} catch (e: Exception) {
+    file(".") // Fallback if path resolution fails
+}
 
 tasks {
     shadowJar {
@@ -51,7 +56,7 @@ tasks {
         into(devPluginsDir)
 
         doFirst {
-            println("Deploying plugin jar to: ${devPluginsDir.asFile.absolutePath}")
+            println("Deploying plugin jar to: ${devPluginsDir.absolutePath}")
         }
     }
 

@@ -26,7 +26,7 @@ import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
-import net.knightsandkings.knk.core.ports.api.GateStructuresApi;
+import net.knightsandkings.knk.api.GateStructuresApi;
 import okhttp3.OkHttpClient;
 
 import javax.net.ssl.SSLContext;

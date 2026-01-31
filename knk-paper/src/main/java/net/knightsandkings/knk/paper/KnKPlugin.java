@@ -12,9 +12,9 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
-import net.knightsandkings.knk.core.ports.api.GateStructuresApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
@@ -107,17 +107,14 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("WorldTasksApi wired from API client");
             getLogger().info("GateStructuresApi wired from API client");
             
-            // Initialize GateManager
-            this.gateManager = new GateManager(gateStructuresApi);
+            // Initialize GateManager (no-arg constructor for dependency injection flexibility)
+            this.gateManager = new GateManager();
             getLogger().info("GateManager initialized");
             
-            // Load gates from API asynchronously
-            gateManager.loadGatesFromApi()
-                .thenRun(() -> getLogger().info("Gate loading complete"))
-                .exceptionally(e -> {
-                    getLogger().severe("Failed to load gates: " + e.getMessage());
-                    return null;
-                });
+            // TODO: Phase 8+ - Wire GateLoaderAdapter to load gates from API during startup
+            // GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
+            // adapter.loadGatesFromApi(gateStructuresApi);
+
             
             // Initialize WorldTask handler registry and register handlers
             this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
