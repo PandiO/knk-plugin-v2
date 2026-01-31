@@ -1,0 +1,213 @@
+package net.knightsandkings.knk.paper.gates;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.util.Vector;
+
+import java.util.logging.Logger;
+
+/**
+ * Utility class for placing and removing gate blocks during animation.
+ * Handles block physics, fallback materials, and error recovery.
+ */
+public class GateBlockPlacer {
+    private static final Logger LOGGER = Logger.getLogger(GateBlockPlacer.class.getName());
+
+    /**
+     * Place a block at the specified location with the given block data.
+     * 
+     * @param world The world to place the block in
+     * @param position The position to place the block at
+     * @param blockData The block data string (e.g., "minecraft:stone", "minecraft:oak_door[facing=north]")
+     * @param fallbackMaterial Fallback material if blockData is invalid
+     * @return True if block was placed successfully
+     */
+    public static boolean placeBlock(World world, Vector position, String blockData, Material fallbackMaterial) {
+        if (world == null || position == null) {
+            LOGGER.warning("Cannot place block: world or position is null");
+            return false;
+        }
+
+        // Create location
+        Location location = new Location(
+            world,
+            position.getBlockX(),
+            position.getBlockY(),
+            position.getBlockZ()
+        );
+
+        // Check if chunk is loaded
+        if (!world.isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4)) {
+            LOGGER.fine("Chunk not loaded at " + location + ", skipping block placement");
+            return false;
+        }
+
+        Block block = world.getBlockAt(location);
+
+        try {
+            // Parse block data
+            BlockData data = parseBlockData(blockData, fallbackMaterial);
+            
+            if (data == null) {
+                LOGGER.warning("Failed to parse block data: " + blockData);
+                return false;
+            }
+
+            // Set block with physics disabled to prevent water flow, gravel fall, etc.
+            block.setBlockData(data, false);
+            return true;
+
+        } catch (Exception e) {
+            LOGGER.warning("Error placing block at " + location + ": " + e.getMessage());
+            
+            // Try fallback material as last resort
+            if (fallbackMaterial != null && fallbackMaterial != Material.AIR) {
+                try {
+                    block.setType(fallbackMaterial, false);
+                    LOGGER.fine("Used fallback material " + fallbackMaterial + " at " + location);
+                    return true;
+                } catch (Exception ex) {
+                    LOGGER.severe("Failed to place fallback material: " + ex.getMessage());
+                }
+            }
+            
+            return false;
+        }
+    }
+
+    /**
+     * Remove a block by setting it to air.
+     * 
+     * @param world The world to remove the block from
+     * @param position The position of the block to remove
+     * @return True if block was removed successfully
+     */
+    public static boolean removeBlock(World world, Vector position) {
+        if (world == null || position == null) {
+            return false;
+        }
+
+        Location location = new Location(
+            world,
+            position.getBlockX(),
+            position.getBlockY(),
+            position.getBlockZ()
+        );
+
+        // Check if chunk is loaded
+        if (!world.isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4)) {
+            return false;
+        }
+
+        try {
+            Block block = world.getBlockAt(location);
+            block.setType(Material.AIR, false); // Physics disabled
+            return true;
+        } catch (Exception e) {
+            LOGGER.warning("Error removing block at " + location + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Parse a block data string into a BlockData object.
+     * Supports formats like:
+     * - "minecraft:stone"
+     * - "stone"
+     * - "minecraft:oak_door[facing=north,half=lower]"
+     * 
+     * @param blockDataString The block data string
+     * @param fallback Fallback material if parsing fails
+     * @return BlockData object or null if parsing failed
+     */
+    private static BlockData parseBlockData(String blockDataString, Material fallback) {
+        if (blockDataString == null || blockDataString.isEmpty()) {
+            return fallback != null ? fallback.createBlockData() : null;
+        }
+
+        try {
+            // Try to parse as full block data string (with properties)
+            return Bukkit.createBlockData(blockDataString);
+        } catch (IllegalArgumentException e) {
+            // If that fails, try to parse as material name
+            try {
+                Material material = Material.matchMaterial(blockDataString);
+                if (material != null && material.isBlock()) {
+                    return material.createBlockData();
+                }
+            } catch (Exception ex) {
+                LOGGER.fine("Failed to parse material: " + blockDataString);
+            }
+
+            // Use fallback
+            if (fallback != null) {
+                LOGGER.fine("Using fallback material for: " + blockDataString);
+                return fallback.createBlockData();
+            }
+
+            return null;
+        }
+    }
+
+    /**
+     * Check if a chunk is loaded at the given position.
+     * 
+     * @param world The world to check
+     * @param position The position to check
+     * @return True if chunk is loaded
+     */
+    public static boolean isChunkLoaded(World world, Vector position) {
+        if (world == null || position == null) {
+            return false;
+        }
+
+        int chunkX = position.getBlockX() >> 4;
+        int chunkZ = position.getBlockZ() >> 4;
+        
+        return world.isChunkLoaded(chunkX, chunkZ);
+    }
+
+    /**
+     * Batch place multiple blocks efficiently.
+     * 
+     * @param world The world to place blocks in
+     * @param positions Array of positions
+     * @param blockDataStrings Array of block data strings (same length as positions)
+     * @param fallbackMaterial Fallback material for all blocks
+     * @return Number of blocks successfully placed
+     */
+    public static int placeBlocks(World world, Vector[] positions, String[] blockDataStrings, Material fallbackMaterial) {
+        if (positions == null || blockDataStrings == null || positions.length != blockDataStrings.length) {
+            LOGGER.warning("Invalid arguments for batch block placement");
+            return 0;
+        }
+
+        int successCount = 0;
+        
+        for (int i = 0; i < positions.length; i++) {
+            if (placeBlock(world, positions[i], blockDataStrings[i], fallbackMaterial)) {
+                successCount++;
+            }
+        }
+
+        return successCount;
+    }
+
+    /**
+     * Check if a block position is safe to modify (not in protected regions, etc.).
+     * For future integration with WorldGuard/protection plugins.
+     * 
+     * @param world The world
+     * @param position The position to check
+     * @return True if safe to modify
+     */
+    public static boolean isSafeToModify(World world, Vector position) {
+        // TODO: Add WorldGuard integration to check if position is in a protected region
+        // For now, assume all positions are safe
+        return true;
+    }
+}

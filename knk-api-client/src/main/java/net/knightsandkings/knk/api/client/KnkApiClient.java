@@ -34,7 +34,7 @@ import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
-import net.knightsandkings.knk.core.ports.api.GateStructuresApi;
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.ports.api.RegionsCommandApi;
 import okhttp3.OkHttpClient;
 

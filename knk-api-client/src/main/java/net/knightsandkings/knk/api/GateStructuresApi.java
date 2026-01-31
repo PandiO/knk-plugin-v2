@@ -1,4 +1,4 @@
-package net.knightsandkings.knk.core.ports.api;
+package net.knightsandkings.knk.api;
 
 import net.knightsandkings.knk.api.dto.GateBlockSnapshotDto;
 import net.knightsandkings.knk.api.dto.GateStructureDto;
@@ -9,6 +9,9 @@ import java.util.concurrent.CompletableFuture;
 /**
  * API interface for gate structure operations.
  * Provides methods to fetch gate structures and their block snapshots from the Web API.
+ * 
+ * This interface is in knk-api-client (not knk-core) because it returns DTOs.
+ * Framework adapters (in knk-paper) implement this and use it to load gates into knk-core.
  */
 public interface GateStructuresApi {
 
