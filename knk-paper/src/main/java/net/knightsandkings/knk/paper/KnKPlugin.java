@@ -16,6 +16,7 @@ import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
+import net.knightsandkings.knk.core.ports.api.GateStructuresApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.EnchantmentDefinitionsQueryApi;
 import net.knightsandkings.knk.core.ports.api.ItemBlueprintsQueryApi;
@@ -33,6 +34,7 @@ import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.ports.gates.GateControlPort;
+import net.knightsandkings.knk.core.gates.GateManager;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
@@ -84,6 +86,8 @@ public class KnKPlugin extends JavaPlugin {
     private ItemBlueprintsDataAccess itemBlueprintsDataAccess;
     private MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess;
     private WorldTasksApi worldTasksApi;
+    private GateStructuresApi gateStructuresApi;
+    private GateManager gateManager;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
@@ -134,6 +138,7 @@ public class KnKPlugin extends JavaPlugin {
             this.usersCommandApi = apiClient.getUsersCommandApi();
             this.userAccountApi = apiClient.getUserAccountApi();
             this.worldTasksApi = apiClient.getWorldTasksApi();
+            this.gateStructuresApi = apiClient.getGateStructuresApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
             getLogger().info("EnchantmentDefinitionsQueryApi wired from API client");
@@ -146,6 +151,19 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("UsersQueryApi wired from API client");
             getLogger().info("UsersCommandApi wired from API client");
             getLogger().info("WorldTasksApi wired from API client");
+            getLogger().info("GateStructuresApi wired from API client");
+            
+            // Initialize GateManager
+            this.gateManager = new GateManager(gateStructuresApi);
+            getLogger().info("GateManager initialized");
+            
+            // Load gates from API asynchronously
+            gateManager.loadGatesFromApi()
+                .thenRun(() -> getLogger().info("Gate loading complete"))
+                .exceptionally(e -> {
+                    getLogger().severe("Failed to load gates: " + e.getMessage());
+                    return null;
+                });
             
             // Initialize cache manager
             this.cacheManager = new CacheManager(config.cache().ttl());

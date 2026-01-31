@@ -19,8 +19,7 @@ import net.knightsandkings.knk.api.impl.UsersQueryApiImpl;
 import net.knightsandkings.knk.api.impl.UsersCommandApiImpl;
 import net.knightsandkings.knk.api.impl.UserAccountApiImpl;
 import net.knightsandkings.knk.api.impl.WorldTasksApiImpl;
-import net.knightsandkings.knk.api.impl.RegionsCommandApiImpl;
-import net.knightsandkings.knk.api.impl.RegionsCommandApiImpl;
+import net.knightsandkings.knk.api.impl.GateStructuresApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -35,7 +34,7 @@ import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
-import net.knightsandkings.knk.core.ports.api.RegionsCommandApi;
+import net.knightsandkings.knk.core.ports.api.GateStructuresApi;
 import net.knightsandkings.knk.core.ports.api.RegionsCommandApi;
 import okhttp3.OkHttpClient;
 
@@ -71,7 +70,6 @@ public class KnkApiClient {
     private final UsersCommandApi usersCommandApi;
     private final UserAccountApi userAccountApi;
     private final WorldTasksApi worldTasksApi;
-    private final RegionsCommandApi regionsCommandApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -102,7 +100,6 @@ public class KnkApiClient {
         this.usersCommandApi = new UsersCommandApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.userAccountApi = new UserAccountApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.worldTasksApi = new WorldTasksApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
-        this.regionsCommandApi = new RegionsCommandApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -159,10 +156,6 @@ public class KnkApiClient {
     
     public WorldTasksApi getWorldTasksApi() {
         return worldTasksApi;
-    }
-
-    public RegionsCommandApi getRegionsCommandApi() {
-        return regionsCommandApi;
     }
     
     /**
