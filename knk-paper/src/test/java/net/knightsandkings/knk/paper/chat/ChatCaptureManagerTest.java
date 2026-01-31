@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.mockito.ArgumentCaptor;
 
 import net.knightsandkings.knk.paper.config.KnkConfig;
@@ -25,6 +26,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * Unit tests for ChatCaptureManager.
  * Tests secure chat capture flows for account creation and merging.
  */
+@ExtendWith(MockitoExtension.class)
+@Tag("requires-bukkit")
 class ChatCaptureManagerTest {
 
     private ChatCaptureManager manager;

@@ -11,12 +11,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.*;
 
+@Tag("requires-bukkit")
 class AccountCommandRegistryTest {
     private KnkConfig config;
     private KnKPlugin plugin;

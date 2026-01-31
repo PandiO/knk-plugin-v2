@@ -13,9 +13,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 
 import net.knightsandkings.knk.api.dto.*;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
+import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
 import net.knightsandkings.knk.paper.commands.AccountCreateCommand;
@@ -32,9 +34,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * Tests the full lifecycle from command execution to API calls.
  */
 @ExtendWith(MockitoExtension.class)
+@Tag("requires-bukkit")
 class AccountCommandIntegrationTest {
 
     private UserAccountApi mockApi;
+    private UsersQueryApi mockUsersQueryApi;
     private KnKPlugin mockPlugin;
     private Logger mockLogger;
     private KnkConfig mockConfig;
@@ -53,6 +57,7 @@ class AccountCommandIntegrationTest {
     @BeforeEach
     void setUp() {
         mockApi = mock(UserAccountApi.class);
+        mockUsersQueryApi = mock(UsersQueryApi.class);
         mockPlugin = mock(KnKPlugin.class);
         mockLogger = mock(Logger.class);
         mockConfig = mock(KnkConfig.class);
@@ -74,7 +79,7 @@ class AccountCommandIntegrationTest {
         when(mockCooldownManager.canExecute(any(UUID.class), anyString(), anyInt())).thenReturn(true);
         
         // Initialize components
-        userManager = new UserManager(mockPlugin, mockApi, mockLogger, mockAccountConfig, mockMessagesConfig);
+        userManager = new UserManager(mockPlugin, mockApi, mockUsersQueryApi, mockLogger, mockAccountConfig, mockMessagesConfig);
         chatCaptureManager = new ChatCaptureManager(mockPlugin, mockConfig, mockLogger);
         accountCreateCommand = new AccountCreateCommand(
             mockPlugin, userManager, chatCaptureManager, mockApi, mockConfig, mockCooldownManager

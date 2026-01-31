@@ -9,6 +9,7 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/")
     // EngineHub repo voor WorldGuard/WorldEdit
     maven("https://maven.enginehub.org/repo/")
+    maven("https://jitpack.io")
 }
 
 dependencies {
@@ -27,7 +28,10 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // Skip integration tests by default during build
+        excludeTags("integration", "requires-bukkit")
+    }
 }
 
 val devPluginsDir = rootProject.layout.projectDirectory

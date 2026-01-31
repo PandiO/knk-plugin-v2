@@ -12,11 +12,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 
 import net.knightsandkings.knk.api.dto.CreateUserRequestDto;
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
+import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,11 +29,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * Tests user account lifecycle management, caching, and duplicate detection.
  */
 @ExtendWith(MockitoExtension.class)
+@Tag("requires-bukkit")
 class UserManagerTest {
 
     private UserManager userManager;
     private KnKPlugin mockPlugin;
     private UserAccountApi mockApi;
+    private UsersQueryApi mockUsersQueryApi;
     private Logger mockLogger;
     private KnkConfig.AccountConfig mockAccountConfig;
     private KnkConfig.MessagesConfig mockMessagesConfig;
@@ -42,6 +46,7 @@ class UserManagerTest {
     void setUp() {
         mockPlugin = mock(KnKPlugin.class);
         mockApi = mock(UserAccountApi.class);
+        mockUsersQueryApi = mock(UsersQueryApi.class);
         mockLogger = mock(Logger.class);
         mockAccountConfig = mock(KnkConfig.AccountConfig.class);
         mockMessagesConfig = mock(KnkConfig.MessagesConfig.class);
@@ -54,6 +59,7 @@ class UserManagerTest {
         userManager = new UserManager(
             mockPlugin,
             mockApi,
+            mockUsersQueryApi,
             mockLogger,
             mockAccountConfig,
             mockMessagesConfig
