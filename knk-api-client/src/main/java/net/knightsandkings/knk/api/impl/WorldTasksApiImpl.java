@@ -93,13 +93,13 @@ public class WorldTasksApiImpl extends BaseApiImpl implements WorldTasksApi {
     }
 
     @Override
-    public CompletableFuture<WorldTaskDto> claim(int id, String serverId, String minecraftUsername) {
+    public CompletableFuture<WorldTaskDto> claim(int id, String linkCode, String serverId, String minecraftUsername) {
         return CompletableFuture.supplyAsync(() -> {
             String url = baseUrl + WORLD_TASKS_ENDPOINT + "/" + id + "/claim";
             try {
-                ClaimTaskDto claimDto = new ClaimTaskDto(serverId, minecraftUsername);
+                ClaimTaskDto claimDto = new ClaimTaskDto(linkCode, serverId, minecraftUsername);
                 String bodyJson = objectMapper.writeValueAsString(claimDto);
-                LOGGER.fine("Claiming task " + id + " for " + minecraftUsername + " on server " + serverId);
+                LOGGER.fine("Claiming task " + id + " (code: " + linkCode + ") for " + minecraftUsername + " on server " + serverId);
                 String responseJson = postJson(url, bodyJson);
                 return objectMapper.readValue(responseJson, WorldTaskDto.class);
             } catch (ApiException | IOException e) {

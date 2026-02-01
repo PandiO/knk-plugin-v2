@@ -79,7 +79,73 @@ messages:
 
 # Cache configuration
 cache:
-  # Time-to-live for cached API responses (in seconds)
+  # Global time-to-live for cached API responses (in seconds)
   # After this duration, cached data is considered stale and will be refetched
   # Recommended: 60-300 seconds (1-5 minutes) depending on data freshness requirements
   ttl-seconds: 60
+  
+  # Per-entity cache and data access settings (overrides global TTL and policy defaults)
+  entities:
+    users:
+      ttl-minutes: 15          # Cache TTL (minutes)
+      max-ttl-minutes: 60      # Maximum allowed TTL
+      default-policy: CACHE_FIRST  # Default fetch policy (CACHE_ONLY, CACHE_FIRST, API_ONLY, API_THEN_CACHE_REFRESH, STALE_OK)
+      allow-stale: true        # Allow serving stale data
+      retry-attempts: 3        # Max retry attempts for API failures
+      retry-backoff-ms: 100    # Initial retry delay (milliseconds)
+    
+    towns:
+      ttl-minutes: 30
+      max-ttl-minutes: 240
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+    
+    districts:
+      ttl-minutes: 30
+      max-ttl-minutes: 240
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+    
+    structures:
+      ttl-minutes: 20
+      max-ttl-minutes: 120
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+    
+    streets:
+      ttl-minutes: 60
+      max-ttl-minutes: 480
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+    
+    locations:
+      ttl-minutes: 20
+      max-ttl-minutes: 120
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+    
+    domains:
+      ttl-minutes: 30
+      max-ttl-minutes: 240
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+    
+    health:
+      ttl-seconds: 30          # Health uses seconds (short TTL)
+      max-ttl-seconds: 120
+      default-policy: CACHE_FIRST
+      allow-stale: false       # Don't serve stale health checks
+      retry-attempts: 2        # Fewer retries for health checks
+      retry-backoff-ms: 50

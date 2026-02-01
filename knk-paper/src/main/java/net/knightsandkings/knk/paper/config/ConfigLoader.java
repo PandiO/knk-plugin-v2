@@ -47,9 +47,12 @@ public class ConfigLoader {
         ConfigurationSection cacheSection = config.getConfigurationSection("cache");
         KnkConfig.CacheConfig cacheConfig;
         if (cacheSection != null) {
-            cacheConfig = new KnkConfig.CacheConfig(
-                cacheSection.getInt("ttl-seconds", 60)
-            );
+            int ttlSeconds = cacheSection.getInt("ttl-seconds", 60);
+            
+            // Load entity-specific settings
+            KnkConfig.EntityCacheSettings entitySettings = loadEntityCacheSettings(cacheSection);
+            
+            cacheConfig = new KnkConfig.CacheConfig(ttlSeconds, entitySettings);
         } else {
             // Use defaults if cache section is missing
             cacheConfig = KnkConfig.CacheConfig.defaultConfig();
@@ -102,5 +105,50 @@ public class ConfigLoader {
         knkConfig.validate();
         
         return knkConfig;
+    }
+    
+    private static KnkConfig.EntityCacheSettings loadEntityCacheSettings(ConfigurationSection cacheSection) {
+        ConfigurationSection entitiesSection = cacheSection.getConfigurationSection("entities");
+        if (entitiesSection == null) {
+            return KnkConfig.EntityCacheSettings.defaults();
+        }
+        
+        return new KnkConfig.EntityCacheSettings(
+            loadEntitySettings(entitiesSection, "users"),
+            loadEntitySettings(entitiesSection, "towns"),
+            loadEntitySettings(entitiesSection, "districts"),
+            loadEntitySettings(entitiesSection, "structures"),
+            loadEntitySettings(entitiesSection, "streets"),
+            loadEntitySettings(entitiesSection, "locations"),
+            loadEntitySettings(entitiesSection, "domains"),
+            loadEntitySettings(entitiesSection, "health")
+        );
+    }
+    
+    private static KnkConfig.EntitySettings loadEntitySettings(ConfigurationSection entitiesSection, String entityName) {
+        ConfigurationSection section = entitiesSection.getConfigurationSection(entityName);
+        if (section == null) {
+            return KnkConfig.EntitySettings.defaults();
+        }
+        
+        Integer ttlMinutes = section.contains("ttl-minutes") ? section.getInt("ttl-minutes") : null;
+        Integer ttlSeconds = section.contains("ttl-seconds") ? section.getInt("ttl-seconds") : null;
+        Integer maxTtlMinutes = section.contains("max-ttl-minutes") ? section.getInt("max-ttl-minutes") : null;
+        Integer maxTtlSeconds = section.contains("max-ttl-seconds") ? section.getInt("max-ttl-seconds") : null;
+        String defaultPolicy = section.getString("default-policy");
+        Boolean allowStale = section.contains("allow-stale") ? section.getBoolean("allow-stale") : null;
+        Integer retryAttempts = section.contains("retry-attempts") ? section.getInt("retry-attempts") : null;
+        Integer retryBackoffMs = section.contains("retry-backoff-ms") ? section.getInt("retry-backoff-ms") : null;
+        
+        return new KnkConfig.EntitySettings(
+            ttlMinutes,
+            ttlSeconds,
+            maxTtlMinutes,
+            maxTtlSeconds,
+            defaultPolicy,
+            allowStale,
+            retryAttempts,
+            retryBackoffMs
+        );
     }
 }

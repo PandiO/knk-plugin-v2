@@ -88,4 +88,16 @@ public class WorldTaskHandlerRegistry {
                 .filter(h -> h.isHandling(player))
                 .findFirst();
     }
+
+    /**
+     * Get the WgRegionId handler (convenience method).
+     * @return The WgRegionId handler if registered, null otherwise
+     */
+    public WgRegionIdTaskHandler getWgRegionIdHandler() {
+        IWorldTaskHandler handler = handlers.get("WgRegionId");
+        if (handler instanceof WgRegionIdTaskHandler) {
+            return (WgRegionIdTaskHandler) handler;
+        }
+        return null;
+    }
 }
