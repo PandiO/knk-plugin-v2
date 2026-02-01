@@ -1,4 +1,5 @@
 name: KnightsAndKings
+api: "1.21"
 version: 0.1.0
 main: net.knightsandkings.knk.paper.KnKPlugin
 api-version: "1.21"
@@ -12,8 +13,31 @@ commands:
     description: KnK admin and debug commands
     usage: /knk help
     permission: knk.admin
+
+  account:
+    description: "Manage your in-game account (create, link, view status)"
+    usage: "/account [create|link|status]"
+    aliases: [acc]
+    permission: knk.account.use
     
 permissions:
   knk.admin:
     description: Access to KnK admin commands
+    default: op
+
+  # Account management permissions (Phase 4+)
+  knk.account.use:
+    description: Ability to use /account command (view status)
+    default: true
+
+  knk.account.create:
+    description: Create account with email/password via /account create
+    default: true
+    
+  knk.account.link:
+    description: Generate or consume link codes via /account link
+    default: true
+
+  knk.account.admin:
+    description: Admin account management (future view/modify other players' accounts)
     default: op

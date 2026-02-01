@@ -9,6 +9,7 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/")
     // EngineHub repo voor WorldGuard/WorldEdit
     maven("https://maven.enginehub.org/repo/")
+    maven("https://jitpack.io")
 }
 
 dependencies {
@@ -22,11 +23,15 @@ dependencies {
     testImplementation("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
     testImplementation("org.mockito:mockito-core:5.5.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.5.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // Skip integration tests by default during build
+        excludeTags("integration", "requires-bukkit")
+    }
 }
 
 val devPluginsDir = rootProject.layout.projectDirectory

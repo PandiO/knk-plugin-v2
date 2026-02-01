@@ -18,17 +18,22 @@ import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.ports.gates.GateControlPort;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
+import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
 import net.knightsandkings.knk.paper.cache.CacheManager;
+import net.knightsandkings.knk.paper.commands.AccountCommandRegistry;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
@@ -37,11 +42,17 @@ import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
 import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
+import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
+import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
+import net.knightsandkings.knk.paper.listeners.UserAccountListener;
+import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
 import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
+import net.knightsandkings.knk.paper.user.UserManager;
+import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 
 public class KnKPlugin extends JavaPlugin {
     private KnkApiClient apiClient;
@@ -59,8 +70,12 @@ public class KnKPlugin extends JavaPlugin {
     private UsersCommandApi usersCommandApi;
     private UsersDataAccess usersDataAccess;
     private TownsDataAccess townsDataAccess;
+    private UserAccountApi userAccountApi;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
+    private UserManager userManager;
+    private ChatCaptureManager chatCaptureManager;
+    private CommandCooldownManager cooldownManager;
     private ExecutorService regionLookupExecutor;
     private TempRegionRetentionTask tempRegionRetentionTask;
     
@@ -101,6 +116,7 @@ public class KnKPlugin extends JavaPlugin {
             this.domainsQueryApi = apiClient.getDomainsQueryApi();
             this.usersQueryApi = apiClient.getUsersQueryApi();
             this.usersCommandApi = apiClient.getUsersCommandApi();
+            this.userAccountApi = apiClient.getUserAccountApi();
             this.worldTasksApi = apiClient.getWorldTasksApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
@@ -111,6 +127,48 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("UsersQueryApi wired from API client");
             getLogger().info("UsersCommandApi wired from API client");
             getLogger().info("WorldTasksApi wired from API client");
+            
+            // Initialize cache manager
+            this.cacheManager = new CacheManager(config.cache().ttl());
+            getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
+            
+                        // Initialize UserManager for account management (Phase 2)
+                        this.userManager = new UserManager(
+                            this,
+                            userAccountApi,
+                            usersQueryApi,
+                            cacheManager.getUserCache(),  // Legacy cache for PlayerListener compatibility
+                            getLogger(),
+                            config.account(),
+                            config.messages()
+                        );
+                        getLogger().info("UserManager initialized for account management");
+            
+            // Initialize ChatCaptureManager for secure input (Phase 3)
+            this.chatCaptureManager = new ChatCaptureManager(this, config, getLogger());
+            getLogger().info("ChatCaptureManager initialized for secure chat input");
+            
+            // Initialize CommandCooldownManager for rate limiting (Phase 5)
+            this.cooldownManager = new CommandCooldownManager(getLogger());
+            getLogger().info("CommandCooldownManager initialized for rate limiting");
+            
+            // Start cooldown cleanup task (runs every N minutes as configured)
+            int cleanupInterval = config.account().cooldowns().cleanupIntervalMinutes();
+            int cleanupTicks = cleanupInterval * 60 * 20; // Convert minutes to ticks (20 ticks/sec)
+            getServer().getScheduler().runTaskTimerAsynchronously(
+                this,
+                () -> cooldownManager.cleanup(3600), // Remove cooldowns older than 1 hour
+                cleanupTicks,
+                cleanupTicks
+            );
+            getLogger().info("Cooldown cleanup task scheduled (every " + cleanupInterval + " minutes)");
+            
+            // Register chat capture listener
+            getServer().getPluginManager().registerEvents(
+                new ChatCaptureListener(chatCaptureManager),
+                this
+            );
+            getLogger().info("ChatCaptureListener registered");
 
             // Initialize WorldTask handler registry and register handlers
             this.worldTaskHandlerRegistry = new WorldTaskHandlerRegistry();
@@ -134,6 +192,7 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
             // Initialize cache manager and data access factory from config
+            // Initialize cache manager and data access factory from config
             this.cacheManager = new CacheManager(config.cache().ttl());
             this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
             this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
@@ -145,7 +204,18 @@ public class KnKPlugin extends JavaPlugin {
                 cacheManager.getTownCache(),
                 townsQueryApi
             );
+            this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
+            this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
+                cacheManager.getUserCache(),
+                usersQueryApi,
+                usersCommandApi
+            );
+            this.townsDataAccess = dataAccessFactory.createTownsDataAccess(
+                cacheManager.getTownCache(),
+                townsQueryApi
+            );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
+            getLogger().info("Data access factory initialized with entity-specific settings");
             getLogger().info("Data access factory initialized with entity-specific settings");
 
             // Register commands
@@ -211,6 +281,13 @@ public class KnKPlugin extends JavaPlugin {
             );
             getLogger().info("Registered WorldTaskChatListener for task chat input handling");
             
+            // Register world task chat listener for handling chat input during tasks
+            getServer().getPluginManager().registerEvents(
+                new WorldTaskChatListener(this, worldTaskHandlerRegistry),
+                this
+            );
+            getLogger().info("Registered WorldTaskChatListener for task chat input handling");
+            
             getLogger().info("Region transition service initialized with domain resolver and gate control");
 
             getLogger().info("KnightsAndKings Plugin Enabled!");
@@ -228,6 +305,9 @@ public class KnKPlugin extends JavaPlugin {
         if (tempRegionRetentionTask != null) {
             tempRegionRetentionTask.stop();
         }
+        if (tempRegionRetentionTask != null) {
+            tempRegionRetentionTask.stop();
+        }
         if (cacheManager != null) {
             getLogger().info("Logging final cache metrics...");
             cacheManager.logMetrics();
@@ -236,6 +316,9 @@ public class KnKPlugin extends JavaPlugin {
         if (apiClient != null) {
             getLogger().info("Shutting down API client...");
             apiClient.shutdown();
+        }
+        if (regionHttpServer != null) {
+            regionHttpServer.stop();
         }
         if (regionHttpServer != null) {
             regionHttpServer.stop();
@@ -252,6 +335,8 @@ public class KnKPlugin extends JavaPlugin {
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
         pluginManager.registerEvents(new PlayerListener(usersDataAccess, townsDataAccess, this.getCacheManager()), this);
+        pluginManager.registerEvents(new UserAccountListener(userManager, config.messages(), getLogger()), this);
+        getLogger().info("Registered UserAccountListener for account management");
     }
     
     /**
@@ -286,8 +371,47 @@ public class KnKPlugin extends JavaPlugin {
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");
         }
+
+        PluginCommand accountCommand = getCommand("account");
+        if (accountCommand != null) {
+            accountCommand.setExecutor(new AccountCommandRegistry(
+                this,
+                userManager,
+                chatCaptureManager,
+                userAccountApi,
+                config,
+                cooldownManager
+            ));
+            getLogger().info("Registered /account command with cooldown management");
+        } else {
+            getLogger().warning("Failed to register /account command - not defined in plugin.yml?");
+        }
     }
     
+    public UsersCommandApi getUsersCommandApi() {
+        return usersCommandApi;
+    }
+
+    public UserAccountApi getUserAccountApi() {
+        return userAccountApi;
+    }
+
+    public UserManager getUserManager() {
+        return userManager;
+    }
+
+    public ChatCaptureManager getChatCaptureManager() {
+        return chatCaptureManager;
+    }
+    
+    public CommandCooldownManager getCooldownManager() {
+        return cooldownManager;
+    }
+
+    public WorldTasksApi getWorldTasksApi() {
+        return worldTasksApi;
+    }
+
     private AuthProvider createAuthProvider(KnkConfig.AuthConfig authConfig) {
         String type = authConfig.type().toLowerCase();
         return switch (type) {

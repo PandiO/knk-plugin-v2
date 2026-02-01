@@ -6,6 +6,9 @@ public record UserSummaryDto (
     @JsonProperty("id") Integer id,
     @JsonProperty("username") String username,
     @JsonProperty("uuid") java.util.UUID uuid,
-    @JsonProperty("coins") int coins
-    
+    @JsonProperty("email") String email,
+    @JsonProperty("coins") int coins,
+    @JsonProperty("gems") int gems,
+    @JsonProperty("experiencePoints") int experiencePoints,
+    @JsonProperty("isFullAccount") boolean isFullAccount
 ) {}
