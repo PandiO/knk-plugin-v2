@@ -85,7 +85,8 @@ public class GateLoaderAdapter {
             dto.getIsActive() != null ? dto.getIsActive() : false,
             dto.getIsDestroyed() != null ? dto.getIsDestroyed() : false,
             dto.getIsInvincible() != null ? dto.getIsInvincible() : true,
-            dto.getRotationMaxAngleDegrees() != null ? dto.getRotationMaxAngleDegrees() : 90
+            dto.getRotationMaxAngleDegrees() != null ? dto.getRotationMaxAngleDegrees() : 90,
+            dto.getFaceDirection() != null ? dto.getFaceDirection() : "north"
         );
 
         // Precompute local basis vectors

@@ -36,7 +36,8 @@ class GateFrameCalculatorTest {
             true,                                   // isActive
             false,                                  // isDestroyed
             true,                                   // isInvincible
-            90                                      // rotationMaxAngleDegrees
+            90,                                     // rotationMaxAngleDegrees
+            "north"                                // faceDirection
         );
 
         // Set up axes
@@ -151,7 +152,8 @@ class GateFrameCalculatorTest {
             2, "TestGate2", "SLIDING", "VERTICAL", "PLANE_GRID",
             60, 2, // tickRate = 2
             new Vector(100, 64, 100), 5, 5, 3,
-            500.0, 500.0, true, false, true, 90
+            500.0, 500.0, true, false, true, 90,
+            "north"
         );
 
         assertTrue(GateFrameCalculator.shouldUpdateFrame(gateTickRate2, 0));
@@ -166,7 +168,8 @@ class GateFrameCalculatorTest {
             3, "Drawbridge", "DRAWBRIDGE", "ROTATION", "PLANE_GRID",
             90, 1,
             new Vector(100, 64, 100), 0, 0, 0,
-            500.0, 500.0, true, false, true, 90
+            500.0, 500.0, true, false, true, 90,
+            "east"
         );
         
         rotationGate.setUAxis(new Vector(1, 0, 0));
