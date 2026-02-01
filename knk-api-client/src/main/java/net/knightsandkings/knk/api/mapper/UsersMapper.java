@@ -15,7 +15,11 @@ public class UsersMapper {
             dto.id(),
             dto.username(),
             dto.uuid(),
-            dto.coins()
+            dto.email(),
+            dto.coins(),
+            dto.gems(),
+            dto.experiencePoints(),
+            dto.isFullAccount()
         );
     }
 
@@ -24,7 +28,11 @@ public class UsersMapper {
             domain.id(),
             domain.username(),
             domain.uuid(),
-            domain.coins()
+            domain.email(),
+            domain.coins(),
+            domain.gems(),
+            domain.experiencePoints(),
+            domain.isFullAccount()
         );
     }
 

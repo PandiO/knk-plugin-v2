@@ -67,7 +67,8 @@ public class UserAccountListener implements Listener {
                 sendDuplicateAccountPrompt(player, userData);
             }
             
-            // Check for account without email and suggest linking
+            // Check for minecraft-only account and suggest linking
+            // hasEmailLinked now reflects isFullAccount from API (true = has email + password)
             if (!userData.hasEmailLinked() && userData.userId() != null) {
                 sendAccountLinkSuggestion(player);
             }
@@ -181,15 +182,10 @@ public class UserAccountListener implements Listener {
             Component.text(messagesConfig.prefix())
                 .append(Component.text("Use ")
                     .color(NamedTextColor.GRAY))
-                .append(Component.text("/account create")
-                    .color(NamedTextColor.GOLD)
-                    .decorate(TextDecoration.UNDERLINED))
-                .append(Component.text(" or ")
-                    .color(NamedTextColor.GRAY))
                 .append(Component.text("/account link")
                     .color(NamedTextColor.GOLD)
                     .decorate(TextDecoration.UNDERLINED))
-                .append(Component.text(" to get started.")
+                .append(Component.text(" with a code from the web app to get started.")
                     .color(NamedTextColor.GRAY))
         );
         

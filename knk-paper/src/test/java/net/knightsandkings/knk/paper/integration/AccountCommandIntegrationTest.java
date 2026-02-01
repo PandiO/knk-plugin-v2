@@ -20,10 +20,10 @@ import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
-import net.knightsandkings.knk.paper.commands.AccountCreateCommand;
 import net.knightsandkings.knk.paper.commands.AccountLinkCommand;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.user.PlayerUserData;
+import net.knightsandkings.knk.core.cache.UserCache;
 import net.knightsandkings.knk.paper.user.UserManager;
 import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,7 +47,6 @@ class AccountCommandIntegrationTest {
     
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
-    private AccountCreateCommand accountCreateCommand;
     private AccountLinkCommand accountLinkCommand;
     private CommandCooldownManager mockCooldownManager;
     
@@ -79,121 +78,12 @@ class AccountCommandIntegrationTest {
         when(mockCooldownManager.canExecute(any(UUID.class), anyString(), anyInt())).thenReturn(true);
         
         // Initialize components
-        userManager = new UserManager(mockPlugin, mockApi, mockUsersQueryApi, mockLogger, mockAccountConfig, mockMessagesConfig);
+        UserCache mockUserCache = mock(UserCache.class);
+        userManager = new UserManager(mockPlugin, mockApi, mockUsersQueryApi, mockUserCache, mockLogger, mockAccountConfig, mockMessagesConfig);
         chatCaptureManager = new ChatCaptureManager(mockPlugin, mockConfig, mockLogger);
-        accountCreateCommand = new AccountCreateCommand(
-            mockPlugin, userManager, chatCaptureManager, mockApi, mockConfig, mockCooldownManager
-        );
         accountLinkCommand = new AccountLinkCommand(
             mockPlugin, userManager, chatCaptureManager, mockApi, mockConfig, mockCooldownManager
         );
-    }
-
-    @Nested
-    @DisplayName("/account create Flow Integration Tests")
-    class AccountCreateFlowTests {
-
-        @Test
-        @DisplayName("Should complete full account creation flow")
-        void shouldCompleteFullAccountCreationFlow() {
-            // Arrange - Setup user in cache without email
-            PlayerUserData userData = new PlayerUserData(
-                1, "TestPlayer", testUUID, null,
-                100, 50, 1000,
-                false, // no email linked
-                false, null
-            );
-            userManager.updateCachedUser(testUUID, userData);
-            
-            // Mock API responses - both return Void
-            when(mockApi.updateEmail(eq(1), eq("test@example.com")))
-                .thenReturn(CompletableFuture.completedFuture(null));
-            when(mockApi.changePassword(eq(1), any()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-            // Act - Execute command
-            boolean commandResult = accountCreateCommand.onCommand(
-                mockPlayer, null, "account", new String[]{"create"}
-            );
-
-            // Assert command accepted
-            assertTrue(commandResult);
-            assertTrue(chatCaptureManager.isCapturingChat(testUUID));
-            
-            // Simulate user input flow
-            chatCaptureManager.handleChatInput(mockPlayer, "test@example.com");
-            chatCaptureManager.handleChatInput(mockPlayer, "StrongPassword123");
-            chatCaptureManager.handleChatInput(mockPlayer, "StrongPassword123");
-            
-            // Give async operations time to complete
-            try { Thread.sleep(100); } catch (InterruptedException e) {}
-            
-            // Assert session closed after completion
-            assertFalse(chatCaptureManager.isCapturingChat(testUUID));
-            
-            // Verify API calls made
-            verify(mockApi, timeout(1000)).updateEmail(1, "test@example.com");
-            verify(mockApi, timeout(1000)).changePassword(eq(1), any(ChangePasswordRequestDto.class));
-            
-            // Verify cache updated
-            PlayerUserData updated = userManager.getCachedUser(testUUID);
-            assertNotNull(updated);
-            assertTrue(updated.hasEmailLinked());
-        }
-
-        @Test
-        @DisplayName("Should reject command if email already linked")
-        void shouldRejectIfEmailAlreadyLinked() {
-            // Arrange - User with email already linked
-            PlayerUserData userData = new PlayerUserData(
-                1, "TestPlayer", testUUID, "existing@example.com",
-                100, 50, 1000,
-                true, // email already linked
-                false, null
-            );
-            userManager.updateCachedUser(testUUID, userData);
-
-            // Act
-            boolean result = accountCreateCommand.onCommand(
-                mockPlayer, null, "account", new String[]{"create"}
-            );
-
-            // Assert
-            assertTrue(result);
-            assertFalse(chatCaptureManager.isCapturingChat(testUUID));
-            
-            // Verify error message sent (use String for Player.sendMessage)
-            verify(mockPlayer, atLeastOnce()).sendMessage(anyString());
-        }
-
-        @Test
-        @DisplayName("Should handle API errors during account creation")
-        void shouldHandleApiErrors() {
-            // Arrange
-            PlayerUserData userData = new PlayerUserData(
-                1, "TestPlayer", testUUID, null,
-                100, 50, 1000, false, false, null
-            );
-            userManager.updateCachedUser(testUUID, userData);
-            
-            // Mock API failure
-            when(mockApi.updateEmail(anyInt(), anyString()))
-                .thenReturn(CompletableFuture.failedFuture(
-                    new RuntimeException("Network error")
-                ));
-
-            // Act
-            accountCreateCommand.onCommand(mockPlayer, null, "account", new String[]{"create"});
-            chatCaptureManager.handleChatInput(mockPlayer, "test@example.com");
-            chatCaptureManager.handleChatInput(mockPlayer, "Password123");
-            chatCaptureManager.handleChatInput(mockPlayer, "Password123");
-            
-            // Give async operations time to complete
-            try { Thread.sleep(100); } catch (InterruptedException e) {}
-
-            // Assert - Error message shown to player (use String sendMessage)
-            verify(mockPlayer, timeout(1000).atLeastOnce()).sendMessage(anyString());
-        }
     }
 
     @Nested

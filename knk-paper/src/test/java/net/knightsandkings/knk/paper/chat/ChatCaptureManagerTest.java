@@ -62,158 +62,6 @@ class ChatCaptureManagerTest {
     }
 
     @Nested
-    @DisplayName("Account Create Flow Tests")
-    class AccountCreateFlowTests {
-
-        @Test
-        @DisplayName("Should start account create flow and prompt for email")
-        void shouldStartAccountCreateFlow() {
-            // Arrange
-            AtomicBoolean completeCalled = new AtomicBoolean(false);
-            AtomicBoolean cancelCalled = new AtomicBoolean(false);
-
-            // Act
-            manager.startAccountCreateFlow(
-                mockPlayer,
-                data -> completeCalled.set(true),
-                () -> cancelCalled.set(true)
-            );
-
-            // Assert
-            assertTrue(manager.isCapturingChat(testUUID), "Session should be active");
-            assertFalse(completeCalled.get(), "Complete should not be called yet");
-            assertFalse(cancelCalled.get(), "Cancel should not be called yet");
-            
-            // Verify player received prompts
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(mockPlayer, atLeast(2)).sendMessage(messageCaptor.capture());
-            assertTrue(messageCaptor.getAllValues().stream()
-                .anyMatch(msg -> msg.contains("Step 1/3") && msg.contains("email")));
-        }
-
-        @Test
-        @DisplayName("Should accept valid email and move to password step")
-        void shouldAcceptValidEmail() {
-            // Arrange
-            AtomicBoolean completeCalled = new AtomicBoolean(false);
-            manager.startAccountCreateFlow(mockPlayer, data -> completeCalled.set(true), () -> {});
-
-            // Act
-            boolean handled = manager.handleChatInput(mockPlayer, "test@example.com");
-
-            // Assert
-            assertTrue(handled, "Input should be handled");
-            assertTrue(manager.isCapturingChat(testUUID), "Session should still be active");
-            
-            // Verify moved to password step
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(mockPlayer, atLeast(1)).sendMessage(messageCaptor.capture());
-            assertTrue(messageCaptor.getAllValues().stream()
-                .anyMatch(msg -> msg.contains("Step 2/3") && msg.contains("password")));
-        }
-
-        @Test
-        @DisplayName("Should reject invalid email format")
-        void shouldRejectInvalidEmail() {
-            // Arrange
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
-
-            // Act
-            manager.handleChatInput(mockPlayer, "not-an-email");
-
-            // Assert
-            assertTrue(manager.isCapturingChat(testUUID), "Session should still be active");
-            
-            // Verify error message sent
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(mockPlayer, atLeast(1)).sendMessage(messageCaptor.capture());
-            assertTrue(messageCaptor.getAllValues().stream()
-                .anyMatch(msg -> msg.contains("Invalid email")));
-        }
-
-        @Test
-        @DisplayName("Should reject weak password (less than 8 characters)")
-        void shouldRejectWeakPassword() {
-            // Arrange
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
-            manager.handleChatInput(mockPlayer, "test@example.com");
-
-            // Act
-            manager.handleChatInput(mockPlayer, "weak");
-
-            // Assert
-            assertTrue(manager.isCapturingChat(testUUID), "Session should still be active");
-            
-            // Verify error message sent
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(mockPlayer, atLeast(1)).sendMessage(messageCaptor.capture());
-            assertTrue(messageCaptor.getAllValues().stream()
-                .anyMatch(msg -> msg.contains("at least 8 characters")));
-        }
-
-        @Test
-        @DisplayName("Should reject password confirmation mismatch")
-        void shouldRejectPasswordMismatch() {
-            // Arrange
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
-            manager.handleChatInput(mockPlayer, "test@example.com");
-            manager.handleChatInput(mockPlayer, "StrongPassword123");
-
-            // Act
-            manager.handleChatInput(mockPlayer, "DifferentPassword456");
-
-            // Assert
-            assertTrue(manager.isCapturingChat(testUUID), "Session should still be active");
-            
-            // Verify error message sent and reset to password step
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(mockPlayer, atLeast(1)).sendMessage(messageCaptor.capture());
-            assertTrue(messageCaptor.getAllValues().stream()
-                .anyMatch(msg -> msg.contains("don't match") || msg.contains("Starting over")));
-        }
-
-        @Test
-        @DisplayName("Should complete flow with valid email and matching passwords")
-        void shouldCompleteFlowSuccessfully() {
-            // Arrange
-            AtomicReference<Map<String, String>> capturedData = new AtomicReference<>();
-            manager.startAccountCreateFlow(mockPlayer, capturedData::set, () -> {});
-
-            // Act - Complete full flow
-            manager.handleChatInput(mockPlayer, "test@example.com");
-            manager.handleChatInput(mockPlayer, "StrongPassword123");
-            manager.handleChatInput(mockPlayer, "StrongPassword123");
-
-            // Assert
-            assertFalse(manager.isCapturingChat(testUUID), "Session should be closed");
-            assertNotNull(capturedData.get(), "Complete callback should be called");
-            assertEquals("test@example.com", capturedData.get().get("email"));
-            assertEquals("StrongPassword123", capturedData.get().get("password"));
-        }
-
-        @Test
-        @DisplayName("Should cancel flow when user types 'cancel'")
-        void shouldCancelFlowOnCancelCommand() {
-            // Arrange
-            AtomicBoolean completeCalled = new AtomicBoolean(false);
-            AtomicBoolean cancelCalled = new AtomicBoolean(false);
-            manager.startAccountCreateFlow(
-                mockPlayer,
-                data -> completeCalled.set(true),
-                () -> cancelCalled.set(true)
-            );
-
-            // Act
-            manager.handleChatInput(mockPlayer, "cancel");
-
-            // Assert
-            assertFalse(manager.isCapturingChat(testUUID), "Session should be closed");
-            assertTrue(cancelCalled.get(), "Cancel callback should be called");
-            assertFalse(completeCalled.get(), "Complete should not be called");
-        }
-    }
-
-    @Nested
     @DisplayName("Account Merge Flow Tests")
     class AccountMergeFlowTests {
 
@@ -366,7 +214,7 @@ class ChatCaptureManagerTest {
         @DisplayName("Should clear all sessions")
         void shouldClearAllSessions() {
             // Arrange
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+            manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
             assertTrue(manager.isCapturingChat(testUUID));
 
             // Act
@@ -384,14 +232,14 @@ class ChatCaptureManagerTest {
             assertEquals(0, manager.getActiveSessionCount());
 
             // Act - Start first session
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+            manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
             assertEquals(1, manager.getActiveSessionCount());
 
             // Act - Start second session
             Player player2 = mock(Player.class);
             when(player2.getUniqueId()).thenReturn(UUID.randomUUID());
             when(player2.getName()).thenReturn("TestPlayer2");
-            manager.startAccountCreateFlow(player2, data -> {}, () -> {});
+            manager.startMergeFlow(player2, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
             assertEquals(2, manager.getActiveSessionCount());
 
             // Act - Complete first session
@@ -405,10 +253,10 @@ class ChatCaptureManagerTest {
         @DisplayName("Should prevent multiple simultaneous sessions for same player")
         void shouldPreventMultipleSessions() {
             // Arrange
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+            manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
 
             // Act - Try to start another session
-            manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+            manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
 
             // Assert - Should still be 1 session (second call overwrites first)
             assertEquals(1, manager.getActiveSessionCount());
@@ -431,7 +279,7 @@ class ChatCaptureManagerTest {
             };
 
             for (String email : validEmails) {
-                manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+                manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
                 manager.handleChatInput(mockPlayer, email);
                 
                 // If email is valid, should move to password step
@@ -465,7 +313,7 @@ class ChatCaptureManagerTest {
             };
 
             for (String email : invalidEmails) {
-                manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+                manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
                 manager.handleChatInput(mockPlayer, email);
                 
                 // Session should still be active (email rejected)
@@ -496,7 +344,7 @@ class ChatCaptureManagerTest {
             };
 
             for (String password : validPasswords) {
-                manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+                manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
                 manager.handleChatInput(mockPlayer, "test@example.com");
                 manager.handleChatInput(mockPlayer, password);
                 
@@ -528,7 +376,7 @@ class ChatCaptureManagerTest {
             };
 
             for (String password : weakPasswords) {
-                manager.startAccountCreateFlow(mockPlayer, data -> {}, () -> {});
+                manager.startMergeFlow(mockPlayer, 0, 0, 0, null, 0, 0, 0, null, data -> {}, () -> {});
                 manager.handleChatInput(mockPlayer, "test@example.com");
                 manager.handleChatInput(mockPlayer, password);
                 

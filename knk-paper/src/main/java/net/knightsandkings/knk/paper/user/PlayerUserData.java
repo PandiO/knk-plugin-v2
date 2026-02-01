@@ -8,7 +8,7 @@ import java.util.UUID;
  * 
  * Lifecycle:
  * - Created: On PlayerJoinEvent (via UserManager)
- * - Updated: When user runs account commands (/account create, /account link)
+ * - Updated: When user runs account link command (/account link)
  * - Cleared: On PlayerQuitEvent
  * 
  * Thread Safety:

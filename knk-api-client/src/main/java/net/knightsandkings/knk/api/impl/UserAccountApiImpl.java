@@ -144,7 +144,7 @@ public class UserAccountApiImpl extends BaseApiImpl implements UserAccountApi {
     public CompletableFuture<Void> updateEmail(Integer userId, String newEmail) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                String json = objectMapper.writeValueAsString(java.util.Map.of("email", newEmail));
+                String json = objectMapper.writeValueAsString(java.util.Map.of("newEmail", newEmail));
                 String url = baseUrl + "/Users/" + userId + "/update-email";
                 putJson(url, json);
                 return null;

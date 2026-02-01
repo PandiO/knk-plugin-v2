@@ -21,6 +21,7 @@ import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.config.KnkConfig;
+import net.knightsandkings.knk.core.cache.UserCache;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -56,10 +57,12 @@ class UserManagerTest {
         when(mockPlayer.getUniqueId()).thenReturn(testUUID);
         when(mockPlayer.getName()).thenReturn("TestPlayer");
         
+        UserCache mockUserCache = mock(UserCache.class);
         userManager = new UserManager(
             mockPlugin,
             mockApi,
             mockUsersQueryApi,
+            mockUserCache,
             mockLogger,
             mockAccountConfig,
             mockMessagesConfig

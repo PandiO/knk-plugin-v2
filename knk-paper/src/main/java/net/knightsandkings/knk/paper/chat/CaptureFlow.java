@@ -6,11 +6,6 @@ package net.knightsandkings.knk.paper.chat;
  */
 public enum CaptureFlow {
     /**
-     * Account creation flow: Email → Password → Password Confirm
-     */
-    ACCOUNT_CREATE,
-    
-    /**
      * Account merge flow: Display accounts → Choice (A or B)
      */
     ACCOUNT_MERGE

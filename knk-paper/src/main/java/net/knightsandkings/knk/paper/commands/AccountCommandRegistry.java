@@ -33,14 +33,6 @@ public class AccountCommandRegistry implements CommandExecutor {
         this.config = config;
 
         AccountCommand accountCommand = new AccountCommand(userManager, config);
-        AccountCreateCommand accountCreateCommand = new AccountCreateCommand(
-            plugin,
-            userManager,
-            chatCaptureManager,
-            userAccountApi,
-            config,
-            cooldownManager
-        );
         AccountLinkCommand accountLinkCommand = new AccountLinkCommand(
             plugin,
             userManager,
@@ -57,12 +49,7 @@ public class AccountCommandRegistry implements CommandExecutor {
         );
 
         registry.register(
-            new CommandMetadata("create", "Create account with email and password", "/account create", "knk.account.create"),
-            (sender, args) -> accountCreateCommand.onCommand(sender, null, "account", args)
-        );
-
-        registry.register(
-            new CommandMetadata("link", "Generate or use a link code", "/account link [code]", "knk.account.use"),
+            new CommandMetadata("link", "Use a link code to link account", "/account link [code]", "knk.account.use"),
             (sender, args) -> accountLinkCommand.onCommand(sender, null, "account", args)
         );
     }

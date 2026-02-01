@@ -33,40 +33,6 @@ public class ChatCaptureManager {
     }
     
     /**
-     * Start the account creation flow (email → password → confirm).
-     *
-     * @param player the player starting the flow
-     * @param onComplete callback when flow completes with collected data
-     * @param onCancel callback if player cancels
-     */
-    public void startAccountCreateFlow(
-            Player player,
-            Consumer<Map<String, String>> onComplete,
-            Runnable onCancel) {
-        
-        logger.info("Starting account creation flow for " + player.getName());
-        
-        ChatCaptureSession session = new ChatCaptureSession(
-            player.getUniqueId(),
-            CaptureFlow.ACCOUNT_CREATE,
-            CaptureStep.EMAIL
-        );
-        
-        session.setOnComplete(onComplete);
-        session.setOnCancel(onCancel);
-        
-        activeSessions.put(player.getUniqueId(), session);
-        
-        // Send initial prompt
-        String prefix = config.messages().prefix();
-        player.sendMessage(prefix + "§eStep 1/3: Enter your email address");
-        player.sendMessage(prefix + "§7(Type 'cancel' to abort)");
-        
-        // Start timeout task
-        startTimeoutTask(player);
-    }
-    
-    /**
      * Start the account merge flow (display accounts → choose A or B).
      *
      * @param player the player starting the flow
@@ -142,68 +108,12 @@ public class ChatCaptureManager {
         }
         
         switch (session.getFlow()) {
-            case ACCOUNT_CREATE:
-                handleAccountCreateInput(player, session, message);
-                break;
             case ACCOUNT_MERGE:
                 handleMergeInput(player, session, message);
                 break;
         }
         
         return true; // Event is cancelled
-    }
-    
-    /**
-     * Handle input for account creation flow.
-     */
-    private void handleAccountCreateInput(Player player, ChatCaptureSession session, String input) {
-        String prefix = config.messages().prefix();
-        
-        switch (session.getCurrentStep()) {
-            case EMAIL:
-                if (!isValidEmail(input)) {
-                    player.sendMessage(prefix + "§cInvalid email format. Please try again.");
-                    logger.fine(player.getName() + " provided invalid email format during account creation");
-                    return;
-                }
-                session.putData("email", input);
-                session.setCurrentStep(CaptureStep.PASSWORD);
-                player.sendMessage(prefix + "§aEmail saved!");
-                player.sendMessage(prefix + "§eStep 2/3: Enter your password (min 8 characters)");
-                logger.fine(player.getName() + " completed email step in account creation");
-                break;
-                
-            case PASSWORD:
-                if (input.length() < 8) {
-                    player.sendMessage(prefix + "§cPassword must be at least 8 characters. Try again.");
-                    logger.fine(player.getName() + " provided password too short during account creation");
-                    return;
-                }
-                session.putData("password", input);
-                session.setCurrentStep(CaptureStep.PASSWORD_CONFIRM);
-                player.sendMessage(prefix + "§aPassword saved!");
-                player.sendMessage(prefix + "§eStep 3/3: Confirm your password");
-                logger.fine(player.getName() + " completed password step in account creation");
-                break;
-                
-            case PASSWORD_CONFIRM:
-                if (!input.equals(session.getData("password"))) {
-                    player.sendMessage(prefix + "§cPasswords don't match. Starting over...");
-                    session.setCurrentStep(CaptureStep.PASSWORD);
-                    session.getData().remove("password");
-                    player.sendMessage(prefix + "§eStep 2/3: Enter your password (min 8 characters)");
-                    logger.fine(player.getName() + " password mismatch during account creation, restarting password flow");
-                    return;
-                }
-                
-                // Complete
-                logger.info(player.getName() + " completed account creation chat flow");
-                completeSession(player, session);
-                break;
-                
-            default:
-                break;
-        }
     }
     
     /**

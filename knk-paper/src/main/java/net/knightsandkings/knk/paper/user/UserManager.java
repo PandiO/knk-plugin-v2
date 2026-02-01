@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import net.knightsandkings.knk.api.dto.CreateUserRequestDto;
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
+import net.knightsandkings.knk.core.cache.UserCache;
 import net.knightsandkings.knk.core.domain.users.UserSummary;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
@@ -33,6 +34,7 @@ public class UserManager {
     private final KnKPlugin plugin;
     private final UserAccountApi userAccountApi;
     private final UsersQueryApi usersQueryApi;
+    private final UserCache legacyUserCache;  // Legacy cache for PlayerListener compatibility
     private final Logger logger;
     private final KnkConfig.AccountConfig accountConfig;
     private final KnkConfig.MessagesConfig messagesConfig;
@@ -44,6 +46,7 @@ public class UserManager {
         KnKPlugin plugin,
         UserAccountApi userAccountApi,
         UsersQueryApi usersQueryApi,
+        UserCache legacyUserCache,
         Logger logger,
         KnkConfig.AccountConfig accountConfig,
         KnkConfig.MessagesConfig messagesConfig
@@ -51,6 +54,7 @@ public class UserManager {
         this.plugin = plugin;
         this.userAccountApi = userAccountApi;
         this.usersQueryApi = usersQueryApi;
+        this.legacyUserCache = legacyUserCache;
         this.logger = logger;
         this.accountConfig = accountConfig;
         this.messagesConfig = messagesConfig;
@@ -147,14 +151,24 @@ public class UserManager {
             UserSummary existingByUuid = usersQueryApi.getByUuid(uuid).join();
             if (existingByUuid != null) {
                 logger.info("User already exists for UUID " + uuid + ": " + existingByUuid.username());
-                return mapToPlayerUserData(existingByUuid, uuid);
+                                //Log all user details for debugging
+                logger.info("User details: ID=" + existingByUuid.id() + 
+                           ", Username=" + existingByUuid.username() + 
+                           ", UUID=" + existingByUuid.uuid() + 
+                           ", Email=" + existingByUuid.email());
+                return mapToPlayerUserData(existingByUuid, uuid, false); // Not new - already exists
             }
 
             // Check if user exists by username (web app first flow)
             UserSummary existingByUsername = usersQueryApi.getByUsername(username).join();
             if (existingByUsername != null && existingByUsername.uuid() != null) {
                 logger.info("User already exists for username " + username + " with UUID");
-                return mapToPlayerUserData(existingByUsername, uuid);
+                //Log all user details for debugging
+                logger.info("User details: ID=" + existingByUsername.id() + 
+                           ", Username=" + existingByUsername.username() + 
+                           ", UUID=" + existingByUsername.uuid() + 
+                           ", Email=" + existingByUsername.email());
+                return mapToPlayerUserData(existingByUsername, uuid, false); // Not new - already exists
             }
 
             // Create minimal user via API
@@ -172,8 +186,25 @@ public class UserManager {
             logger.info("User account created/fetched: ID=" + response.id() + 
                        ", Username=" + response.username());
             
-            // Map to PlayerUserData
-            return mapToPlayerUserData(response, uuid);
+            // Create UserSummary for legacy cache with isNewUser = true
+            UserSummary newUserSummary = new UserSummary(
+                response.id(),
+                response.username(),
+                uuid,
+                response.email(),
+                response.coins() != null ? response.coins() : 0,
+                response.gems() != null ? response.gems() : 0,
+                response.experiencePoints() != null ? response.experiencePoints() : 0,
+                false,  // isFullAccount - new users don't have email/password yet
+                true    // isNewUser - we just created this account
+            );
+            
+            // Update legacy cache for PlayerListener compatibility
+            legacyUserCache.put(newUserSummary);
+            logger.info("Updated legacy cache for new user " + username + " with isNewUser=true");
+            
+            // Map to PlayerUserData (mark as new user since we just created it)
+            return mapToPlayerUserData(response, uuid, true); // NEW user - just created
             
         } catch (Exception ex) {
             logger.severe("Failed to create minimal user for " + username + ": " + ex.getMessage());
@@ -184,7 +215,7 @@ public class UserManager {
     /**
      * Map API response to PlayerUserData.
      */
-    private PlayerUserData mapToPlayerUserData(UserResponseDto response, UUID uuid) {
+    private PlayerUserData mapToPlayerUserData(UserResponseDto response, UUID uuid, boolean isNewUser) {
         return new PlayerUserData(
             response.id(),
             response.username(),
@@ -199,16 +230,16 @@ public class UserManager {
         );
     }
 
-    private PlayerUserData mapToPlayerUserData(UserSummary summary, UUID uuid) {
+    private PlayerUserData mapToPlayerUserData(UserSummary summary, UUID uuid, boolean isNewUser) {
         return new PlayerUserData(
             summary.id(),
             summary.username(),
             uuid,
-            null,
+            summary.email(),
             summary.coins(),
-            0,
-            0,
-            false,
+            summary.gems(),
+            summary.experiencePoints(),
+            summary.isFullAccount(),  // Use isFullAccount from API
             false,
             null
         );

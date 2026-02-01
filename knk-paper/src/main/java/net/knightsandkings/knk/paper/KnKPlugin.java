@@ -113,11 +113,16 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("UsersCommandApi wired from API client");
             getLogger().info("WorldTasksApi wired from API client");
             
+            // Initialize cache manager
+            this.cacheManager = new CacheManager(config.cache().ttl());
+            getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
+            
                         // Initialize UserManager for account management (Phase 2)
                         this.userManager = new UserManager(
                             this,
                             userAccountApi,
                             usersQueryApi,
+                            cacheManager.getUserCache(),  // Legacy cache for PlayerListener compatibility
                             getLogger(),
                             config.account(),
                             config.messages()
@@ -158,10 +163,6 @@ public class KnKPlugin extends JavaPlugin {
             worldTaskHandlerRegistry.registerHandler(wgRegionIdHandler);
             
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
-            
-            // Initialize cache manager
-            this.cacheManager = new CacheManager(config.cache().ttl());
-            getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
 
             // Register commands
             registerCommands();
@@ -253,7 +254,7 @@ public class KnKPlugin extends JavaPlugin {
         // Event registration moved to onEnable after region transition service setup
 
         pluginManager.registerEvents(new WorldGuardRegionListener(regionTracker), this);
-        pluginManager.registerEvents(new PlayerListener(usersQueryApi, usersCommandApi, cacheManager.getUserCache()), this);
+        pluginManager.registerEvents(new PlayerListener(cacheManager.getUserCache()), this);
         pluginManager.registerEvents(new UserAccountListener(userManager, config.messages(), getLogger()), this);
         getLogger().info("Registered UserAccountListener for account management");
     }

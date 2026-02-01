@@ -53,7 +53,7 @@ public class AccountCommand implements CommandExecutor {
         sendRaw(player, "");
 
         if (!userData.hasEmailLinked()) {
-            sendRaw(player, "  &7Use &6/account create &7or &6/account link &7to link email");
+            sendRaw(player, "  &7Use &6/account link &7to link your account");
         }
 
         if (userData.hasDuplicateAccount()) {
