@@ -16,6 +16,7 @@ public class CachedGate {
     private final String gateType;
     private final String motionType;
     private final String geometryDefinitionMode;
+    private final String faceDirection;
 
     // === Animation State (mutable) ===
     private AnimationState currentState;
@@ -58,12 +59,13 @@ public class CachedGate {
                       int animationDurationTicks, int animationTickRate,
                       Vector anchorPoint, int geometryWidth, int geometryHeight, int geometryDepth,
                       double healthCurrent, double healthMax, boolean isActive, boolean isDestroyed, 
-                      boolean isInvincible, int rotationMaxAngleDegrees) {
+                      boolean isInvincible, int rotationMaxAngleDegrees, String faceDirection) {
         this.id = id;
         this.name = name;
         this.gateType = gateType;
         this.motionType = motionType;
         this.geometryDefinitionMode = geometryDefinitionMode;
+        this.faceDirection = faceDirection;
         this.animationDurationTicks = animationDurationTicks;
         this.animationTickRate = animationTickRate;
         this.anchorPoint = anchorPoint;
@@ -102,6 +104,10 @@ public class CachedGate {
 
     public String getGeometryDefinitionMode() {
         return geometryDefinitionMode;
+    }
+
+    public String getFaceDirection() {
+        return faceDirection;
     }
 
     public AnimationState getCurrentState() {

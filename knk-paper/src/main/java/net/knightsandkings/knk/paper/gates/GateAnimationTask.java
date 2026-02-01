@@ -6,8 +6,10 @@ import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateFrameCalculator;
 import net.knightsandkings.knk.core.gates.GateManager;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.entity.Entity;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
@@ -26,6 +28,9 @@ public class GateAnimationTask extends BukkitRunnable {
     
     // Minimum time between lag checks (milliseconds)
     private static final long LAG_CHECK_INTERVAL = 1000;
+
+    private static final double ENTITY_PUSH_RADIUS = 5.0;
+    private static final int ENTITY_COLLISION_FRAMES_THRESHOLD = 2;
 
     private final GateManager gateManager;
     private final World world;
@@ -100,6 +105,9 @@ public class GateAnimationTask extends BukkitRunnable {
                 gate.setCurrentFrame(currentFrame);
             }
 
+            // Handle entity push before updating blocks
+            handleEntityPush(gate, currentFrame);
+
             // Update all block positions for this frame
             updateGateBlocks(gate, currentFrame);
 
@@ -137,6 +145,26 @@ public class GateAnimationTask extends BukkitRunnable {
             } else {
                 // Remove block (opening animation)
                 GateBlockPlacer.removeBlock(world, worldPos);
+            }
+        }
+    }
+
+    private void handleEntityPush(CachedGate gate, int currentFrame) {
+        Vector anchor = gate.getAnchorPoint();
+        if (anchor == null) {
+            return;
+        }
+
+        Location origin = new Location(world, anchor.getX(), anchor.getY(), anchor.getZ());
+
+        for (Entity entity : world.getNearbyEntities(origin, ENTITY_PUSH_RADIUS, ENTITY_PUSH_RADIUS, ENTITY_PUSH_RADIUS)) {
+            if (entity.isDead()) {
+                continue;
+            }
+
+            int framesToCollision = CollisionPredictor.predictCollision(gate, entity, currentFrame);
+            if (framesToCollision <= ENTITY_COLLISION_FRAMES_THRESHOLD) {
+                EntityPusher.pushEntity(entity, gate);
             }
         }
     }
