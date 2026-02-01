@@ -13,7 +13,27 @@ commands:
     usage: /knk help
     permission: knk.admin
     
+commands:
+  gate:
+    description: Gate control and information commands
+    usage: /gate help
+    
 permissions:
   knk.admin:
     description: Access to KnK admin commands
     default: op
+    
+  knk.gate.open.*:
+    description: Permission to open any gate
+    default: false
+    
+  knk.gate.close.*:
+    description: Permission to close any gate
+    default: false
+    
+  knk.gate.admin:
+    description: Permission to use admin gate commands
+    default: op
+    children:
+      knk.gate.open.*: true
+      knk.gate.close.*: true
