@@ -2,6 +2,7 @@ package net.knightsandkings.knk.paper.listeners;
 
 import java.util.logging.Logger;
 
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -15,6 +16,7 @@ import net.knightsandkings.knk.paper.user.UserManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 /**
  * Listener for player join/quit events related to account management.
@@ -42,6 +44,15 @@ public class UserAccountListener implements Listener {
         this.userManager = userManager;
         this.messagesConfig = messagesConfig;
         this.logger = logger;
+    }
+    
+    /**
+     * Convert prefix string with legacy color codes to Adventure Component.
+     * Translates &c, &4, etc. to proper Adventure TextColor objects.
+     */
+    private Component getPrefixComponent() {
+        String legacyFormatted = ChatColor.translateAlternateColorCodes('&', messagesConfig.prefix());
+        return LegacyComponentSerializer.legacySection().deserialize(legacyFormatted);
     }
     
     /**
@@ -79,7 +90,7 @@ public class UserAccountListener implements Listener {
             
             // Send fallback message
             player.sendMessage(
-                Component.text(messagesConfig.prefix())
+                getPrefixComponent()
                     .append(Component.text("Welcome! Your account data could not be loaded. Please contact an admin if this persists.")
                         .color(NamedTextColor.YELLOW))
             );
@@ -100,7 +111,7 @@ public class UserAccountListener implements Listener {
      * Send welcome message with account balance info.
      */
     private void sendWelcomeMessage(Player player, PlayerUserData userData) {
-        Component welcomeMsg = Component.text(messagesConfig.prefix())
+        Component welcomeMsg = getPrefixComponent()
             .append(Component.text("Welcome back, ")
                 .color(NamedTextColor.GREEN))
             .append(Component.text(player.getName())
@@ -113,7 +124,7 @@ public class UserAccountListener implements Listener {
         
         // Show balance if available
         if (userData.userId() != null) {
-            Component balanceMsg = Component.text(messagesConfig.prefix())
+            Component balanceMsg = getPrefixComponent()
                 .append(Component.text("Balance: ")
                     .color(NamedTextColor.GRAY))
                 .append(Component.text(userData.coins() + " coins")
@@ -137,20 +148,20 @@ public class UserAccountListener implements Listener {
     private void sendDuplicateAccountPrompt(Player player, PlayerUserData userData) {
         player.sendMessage(Component.empty());
         player.sendMessage(
-            Component.text(messagesConfig.prefix())
+            getPrefixComponent()
                 .append(Component.text("⚠ DUPLICATE ACCOUNT DETECTED")
                     .color(NamedTextColor.RED)
                     .decorate(TextDecoration.BOLD))
         );
         
         player.sendMessage(
-            Component.text(messagesConfig.prefix())
+            getPrefixComponent()
                 .append(Component.text(messagesConfig.duplicateAccount())
                     .color(NamedTextColor.YELLOW))
         );
         
         player.sendMessage(
-            Component.text(messagesConfig.prefix())
+            getPrefixComponent()
                 .append(Component.text("Use ")
                     .color(NamedTextColor.GRAY))
                 .append(Component.text("/account link")
@@ -170,7 +181,7 @@ public class UserAccountListener implements Listener {
         player.sendMessage(Component.empty());
         
         player.sendMessage(
-            Component.text(messagesConfig.prefix())
+            getPrefixComponent()
                 .append(Component.text("💡 TIP: ")
                     .color(NamedTextColor.AQUA)
                     .decorate(TextDecoration.BOLD))
@@ -179,7 +190,7 @@ public class UserAccountListener implements Listener {
         );
         
         player.sendMessage(
-            Component.text(messagesConfig.prefix())
+            getPrefixComponent()
                 .append(Component.text("Use ")
                     .color(NamedTextColor.GRAY))
                 .append(Component.text("/account link")
