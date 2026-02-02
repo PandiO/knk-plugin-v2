@@ -12,14 +12,12 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
-import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
-import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
-import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
-import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
@@ -28,29 +26,27 @@ import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.ports.gates.GateControlPort;
 import net.knightsandkings.knk.core.regions.RegionDomainResolver;
-import net.knightsandkings.knk.paper.http.RegionHttpServer;
-import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
 import net.knightsandkings.knk.paper.cache.CacheManager;
+import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
 import net.knightsandkings.knk.paper.commands.AccountCommandRegistry;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
+import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
+import net.knightsandkings.knk.paper.http.RegionHttpServer;
+import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
+import net.knightsandkings.knk.paper.listeners.UserAccountListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
 import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
-import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
-import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
-import net.knightsandkings.knk.paper.listeners.UserAccountListener;
-import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
+import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
-import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
-import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 import net.knightsandkings.knk.paper.user.UserManager;
 import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 
@@ -192,7 +188,6 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
             // Initialize cache manager and data access factory from config
-            // Initialize cache manager and data access factory from config
             this.cacheManager = new CacheManager(config.cache().ttl());
             this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
             this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
@@ -215,7 +210,6 @@ public class KnKPlugin extends JavaPlugin {
                 townsQueryApi
             );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
-            getLogger().info("Data access factory initialized with entity-specific settings");
             getLogger().info("Data access factory initialized with entity-specific settings");
 
             // Register commands
@@ -281,13 +275,6 @@ public class KnKPlugin extends JavaPlugin {
             );
             getLogger().info("Registered WorldTaskChatListener for task chat input handling");
             
-            // Register world task chat listener for handling chat input during tasks
-            getServer().getPluginManager().registerEvents(
-                new WorldTaskChatListener(this, worldTaskHandlerRegistry),
-                this
-            );
-            getLogger().info("Registered WorldTaskChatListener for task chat input handling");
-            
             getLogger().info("Region transition service initialized with domain resolver and gate control");
 
             getLogger().info("KnightsAndKings Plugin Enabled!");
@@ -305,9 +292,6 @@ public class KnKPlugin extends JavaPlugin {
         if (tempRegionRetentionTask != null) {
             tempRegionRetentionTask.stop();
         }
-        if (tempRegionRetentionTask != null) {
-            tempRegionRetentionTask.stop();
-        }
         if (cacheManager != null) {
             getLogger().info("Logging final cache metrics...");
             cacheManager.logMetrics();
@@ -316,9 +300,6 @@ public class KnKPlugin extends JavaPlugin {
         if (apiClient != null) {
             getLogger().info("Shutting down API client...");
             apiClient.shutdown();
-        }
-        if (regionHttpServer != null) {
-            regionHttpServer.stop();
         }
         if (regionHttpServer != null) {
             regionHttpServer.stop();
