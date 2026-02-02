@@ -17,9 +17,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
-import org.bukkit.event.player.PlayerChatEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
@@ -33,7 +31,6 @@ import net.knightsandkings.knk.core.dataaccess.FetchResult;
 import net.knightsandkings.knk.core.dataaccess.FetchStatus;
 import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
-import net.knightsandkings.knk.core.domain.districts.DistrictDetail.Town;
 import net.knightsandkings.knk.core.domain.towns.TownDetail;
 import net.knightsandkings.knk.core.domain.users.UserDetail;
 import net.knightsandkings.knk.core.domain.users.UserSummary;
@@ -157,6 +154,7 @@ public class PlayerListener implements Listener {
 	@EventHandler
 	public void onLeave(PlayerQuitEvent e) {
 		Player player = e.getPlayer();
+		e.quitMessage(Component.text(ColorOptions.messageArrow + "Player " + player.getName() + " left").color(ColorOptions.message));
 		e.quitMessage(Component.text(ColorOptions.messageArrow + "Player " + player.getName() + " left").color(ColorOptions.message));
 	}
 

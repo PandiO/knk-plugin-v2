@@ -46,6 +46,7 @@ import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
+import net.knightsandkings.knk.paper.tasks.LocationTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.user.UserManager;
 import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
@@ -172,6 +173,10 @@ public class KnKPlugin extends JavaPlugin {
             // Register WgRegionId handler
             WgRegionIdTaskHandler wgRegionIdHandler = new WgRegionIdTaskHandler(worldTasksApi, this);
             worldTaskHandlerRegistry.registerHandler(wgRegionIdHandler);
+            
+            // Register Location handler
+            LocationTaskHandler locationHandler = new LocationTaskHandler(worldTasksApi, this);
+            worldTaskHandlerRegistry.registerHandler(locationHandler);
 
             // Start lightweight HTTP server for region rename callbacks (default port 8081)
             int httpPort = 8081;
@@ -327,6 +332,15 @@ public class KnKPlugin extends JavaPlugin {
      */
     public CacheManager getCacheManager() {
         return cacheManager;
+    }
+    
+    /**
+     * Returns the WorldTask handler registry for accessing registered handlers.
+     *
+     * @return WorldTaskHandlerRegistry instance
+     */
+    public WorldTaskHandlerRegistry getWorldTaskHandlerRegistry() {
+        return worldTaskHandlerRegistry;
     }
     
     // No extra helpers needed; API client constructs and owns HTTP internals.

@@ -392,7 +392,6 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 return null;
             });
     }
-
     /**
      * Check if a WorldGuard region is completely inside another WorldGuard region.
      * Compares the bounds of the child region against the parent region.
@@ -604,7 +603,6 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             LOGGER.warning("Failed to cleanup temp region " + regionId + ": " + e.getMessage());
         }
     }
-
     /**
      * Called when a player enters a region (legacy support).
      * If the player is handling a WgRegionId task, captures the region ID and completes the task.
