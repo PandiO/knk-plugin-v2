@@ -100,4 +100,16 @@ public class WorldTaskHandlerRegistry {
         }
         return null;
     }
+
+    /**
+     * Get the Location task handler (convenience method).
+     * @return The Location task handler if registered, null otherwise
+     */    
+    public LocationTaskHandler getLocationTaskHandler() {
+        IWorldTaskHandler handler = handlers.get("Location");
+        if (handler instanceof LocationTaskHandler) {
+            return (LocationTaskHandler) handler;
+        }
+        return null;
+    }
 }

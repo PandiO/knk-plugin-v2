@@ -42,10 +42,10 @@ public class WorldTaskChatListener implements Listener {
         }
 
         // TODO: Route to other task handlers as they are implemented
-        // var locationHandler = handlerRegistry.getLocationTaskHandler();
-        // if (locationHandler != null && locationHandler.onPlayerChat(player, message)) {
-        //     event.setCancelled(true);
-        //     return;
-        // }
+        var locationHandler = handlerRegistry.getLocationTaskHandler();
+        if (locationHandler != null && locationHandler.onPlayerChat(player, message)) {
+            event.setCancelled(true);
+            return;
+        }
     }
 }
