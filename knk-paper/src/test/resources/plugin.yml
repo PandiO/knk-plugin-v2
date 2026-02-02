@@ -1,0 +1,6 @@
+name: KnKPlugin
+main: net.knightsandkings.knk.paper.KnKPlugin
+version: 1.0.0-TEST
+description: Knights and Kings Plugin - Test Build
+authors:
+  - KnK Dev Team

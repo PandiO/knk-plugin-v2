@@ -3,6 +3,7 @@ package net.knightsandkings.knk.paper.commands;
 import org.bukkit.command.CommandSender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@Tag("requires-bukkit")
 class HelpSubcommandTest {
     private CommandRegistry registry;
     private HelpSubcommand helpSubcommand;

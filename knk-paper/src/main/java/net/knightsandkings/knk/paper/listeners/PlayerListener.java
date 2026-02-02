@@ -42,6 +42,12 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
+/**
+ * Legacy player listener for join events.
+ * 
+ * NOTE: User creation is now handled by UserAccountListener + UserManager.
+ * This listener only handles join greeting and teleportation.
+ */
 public class PlayerListener implements Listener {
 	private static final Logger LOGGER = Logger.getLogger(PlayerListener.class.getName());
 	private static final long MENTION_SOUND_COOLDOWN_MILLIS = 5_000L;

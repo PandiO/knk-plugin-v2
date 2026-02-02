@@ -26,6 +26,57 @@ api:
     read: 10
     write: 10
 
+# Account management configuration (Phase 1+)
+account:
+  # Link code expiry time (in minutes)
+  # How long a link code remains valid before expiring
+  link-code-expiry-minutes: 20
+  
+  # Chat capture timeout (in seconds)
+  # Maximum time to wait for player chat input during account creation
+  chat-capture-timeout-seconds: 120
+  
+  # Command cooldowns (Phase 5) - Prevents spam and rate limits expensive operations
+  cooldowns:
+    # Cooldown for /account create command (seconds)
+    # Prevents players from spamming account creation
+    account-create-seconds: 300  # 5 minutes
+    
+    # Cooldown for generating link codes (seconds)
+    # Rate limit for /account link (no args)
+    link-code-generate-seconds: 60  # 1 minute
+    
+    # Cooldown for consuming link codes (seconds)
+    # Rate limit for /account link <code>
+    link-code-consume-seconds: 10  # 10 seconds
+    
+    # Cleanup interval for expired cooldowns (minutes)
+    # How often to remove stale cooldown entries from memory
+    cleanup-interval-minutes: 5
+
+# Messages configuration
+messages:
+  # Prefix for all plugin messages
+  prefix: "&8[&6KnK&8] &r"
+  
+  # Account created successfully
+  account-created: "&aAccount created successfully! You can now log in on the web app."
+  
+  # Accounts linked
+  account-linked: "&aYour accounts have been linked!"
+  
+  # Link code generated
+  link-code-generated: "&aYour link code is: &6{code}&a. Use this code in the web app. Expires in {minutes} minutes."
+  
+  # Invalid or expired link code
+  invalid-link-code: "&cThis code is invalid or has expired. Use &6/account link &cto get a new one."
+  
+  # Duplicate account detected
+  duplicate-account: "&cYou have two accounts. Please choose which one to keep."
+  
+  # Merge complete
+  merge-complete: "&aAccount merge complete. Your account now has {coins} coins, {gems} gems, and {exp} XP."
+
 # Cache configuration
 cache:
   # Global time-to-live for cached API responses (in seconds)

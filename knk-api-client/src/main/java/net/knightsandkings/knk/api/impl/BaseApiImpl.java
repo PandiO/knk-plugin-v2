@@ -80,6 +80,10 @@ public class BaseApiImpl {
             if (!response.isSuccessful()) {
                 throw new ApiException(url, response.code(), "Request failed", snippet(responseBody));
             }
+            // 204 No Content is a success with no body - return empty string
+            if (response.code() == 204) {
+                return "";
+            }
             if (responseBody.isEmpty()) {
                 throw new ApiException(url, response.code(), "Empty response body", "");
             }
