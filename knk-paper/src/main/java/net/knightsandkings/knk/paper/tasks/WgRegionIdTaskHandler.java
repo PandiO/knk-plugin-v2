@@ -1,5 +1,7 @@
 package net.knightsandkings.knk.paper.tasks;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sk89q.worldedit.LocalSession;
@@ -15,6 +17,7 @@ import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.managers.RemovalStrategy;
 import com.sk89q.worldguard.protection.regions.ProtectedPolygonalRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
+import net.knightsandkings.knk.core.domain.validation.ValidationResult;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -205,7 +208,24 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                     return;
                 }
 
-                // Validate parent region containment if required
+                // NEW: Validate region against validation rules from InputJson
+                player.sendMessage("§7Validating region selection...");
+                ValidationResult validation = validateRegion(player, selection, context);
+                if (!validation.isValid()) {
+                    player.sendMessage("§c✗ Validation Failed:");
+                    player.sendMessage("§c" + validation.getMessage());
+                    player.sendMessage("§e");
+                    if (validation.isBlocking()) {
+                        player.sendMessage("§eRegion not saved. Please adjust your selection and type 'save' again.");
+                        player.sendMessage("§eOr type 'cancel' to abort the task.");
+                        player.sendMessage("§eIf you believe this is an error, contact a developer.");
+                        return; // Block save
+                    } else {
+                        player.sendMessage("§eWarning only - proceeding with save.");
+                    }
+                }
+
+                // Validate parent region containment if required (legacy check)
                 if (context.parentRegionId != null) {
                     RegionManager regionManager = WorldGuard.getInstance().getPlatform().getRegionContainer()
                         .get(BukkitAdapter.adapt(world));
@@ -604,6 +624,191 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
         }
     }
     /**
+     * Validate region selection against validation rules from InputJson.
+     * Executes all configured validation rules and returns the first failure.
+     * 
+     * @param player The player
+     * @param selection The WorldEdit selection
+     * @param context Task context containing InputJson with validation rules
+     * @return ValidationResult indicating success or failure
+     */
+    private ValidationResult validateRegion(Player player, Region selection, TaskContext context) {
+        try {
+            // Parse validation context from InputJson
+            if (context.inputJson == null || context.inputJson.isEmpty()) {
+                return ValidationResult.success("No validation configured");
+            }
+            
+            JsonObject input = JsonParser.parseString(context.inputJson).getAsJsonObject();
+            if (!input.has("validationContext")) {
+                return ValidationResult.success("No validation configured");
+            }
+            
+            JsonObject validationContext = input.getAsJsonObject("validationContext");
+            if (!validationContext.has("validationRules")) {
+                return ValidationResult.success("No validation rules");
+            }
+            
+            JsonArray rules = validationContext.getAsJsonArray("validationRules");
+            
+            // Execute each validation rule
+            for (JsonElement ruleElement : rules) {
+                JsonObject rule = ruleElement.getAsJsonObject();
+                String validationType = rule.get("validationType").getAsString();
+                
+                if ("RegionContainment".equals(validationType)) {
+                    ValidationResult result = validateRegionContainment(player, selection, rule);
+                    if (!result.isValid()) {
+                        return result; // Return first failure
+                    }
+                }
+                // Add more validation types here as needed
+            }
+            
+            return ValidationResult.success("All validations passed");
+            
+        } catch (Exception e) {
+            LOGGER.warning("Region validation error for task " + context.taskId + ": " + e.getMessage());
+            e.printStackTrace();
+            // Fail-open: Allow task to proceed if validation parsing fails
+            return ValidationResult.success("Validation skipped due to error");
+        }
+    }
+
+    /**
+     * Validate that a region selection is fully contained within a parent region.
+     * 
+     * @param player The player
+     * @param childSelection The child region selection to validate
+     * @param rule The validation rule configuration
+     * @return ValidationResult
+     */
+    private ValidationResult validateRegionContainment(Player player, Region childSelection, JsonObject rule) {
+        try {
+            // Parse config
+            JsonObject config = JsonParser.parseString(rule.get("configJson").getAsString()).getAsJsonObject();
+            
+            // Get parent region ID from dependency field value
+            if (!rule.has("dependencyFieldValue") || rule.get("dependencyFieldValue").isJsonNull()) {
+                return ValidationResult.success("No dependency value - validation skipped");
+            }
+            
+            JsonElement depValue = rule.get("dependencyFieldValue");
+            
+            // Extract parent region ID from dependency (e.g., Town entity)
+            String parentRegionId = extractParentRegionId(depValue, config);
+            if (parentRegionId == null || parentRegionId.isEmpty()) {
+                return ValidationResult.success("No parent region ID - validation skipped");
+            }
+            
+            // Get WorldGuard region manager
+            RegionManager regionManager = WorldGuard.getInstance()
+                .getPlatform()
+                .getRegionContainer()
+                .get(BukkitAdapter.adapt(player.getWorld()));
+            
+            if (regionManager == null) {
+                return ValidationResult.blockingFailure("WorldGuard region manager not available for this world");
+            }
+            
+            // Get parent region
+            ProtectedRegion parentRegion = regionManager.getRegion(parentRegionId);
+            if (parentRegion == null) {
+                String errorMsg = rule.get("errorMessage").getAsString();
+                errorMsg = errorMsg.replace("{regionName}", parentRegionId);
+                return ValidationResult.blockingFailure(errorMsg);
+            }
+            
+            // Check if all points in childSelection are inside parentRegion
+            boolean allPointsInside = true;
+            StringBuilder violations = new StringBuilder();
+            int violationCount = 0;
+            final int maxViolations = 5; // Limit violation output
+            
+            player.sendMessage("§7Checking region points against parent region '" + parentRegion.getId() + "'...");
+            
+            for (BlockVector3 point : childSelection) {
+                if (!parentRegion.contains(point)) {
+                    allPointsInside = false;
+                    violationCount++;
+                    
+                    if (violationCount <= maxViolations) {
+                        if (violations.length() > 0) violations.append(", ");
+                        violations.append(String.format("(%.0f, %.0f, %.0f)", 
+                            (double)point.getX(), (double)point.getY(), (double)point.getZ()));
+                    }
+                }
+            }
+            
+            if (!allPointsInside) {
+                String errorMsg = rule.get("errorMessage").getAsString();
+                errorMsg = errorMsg.replace("{regionName}", parentRegion.getId());
+                
+                if (violationCount > maxViolations) {
+                    violations.append(String.format(" ... and %d more", violationCount - maxViolations));
+                }
+                errorMsg = errorMsg.replace("{violations}", violations.toString());
+                
+                boolean isBlocking = rule.has("isBlocking") && rule.get("isBlocking").getAsBoolean();
+                return new ValidationResult(false, errorMsg, isBlocking);
+            }
+            
+            // Success
+            player.sendMessage("§a✓ Region is fully contained in: " + parentRegion.getId());
+            return ValidationResult.success("Region is fully contained");
+            
+        } catch (Exception e) {
+            LOGGER.warning("RegionContainment validation error: " + e.getMessage());
+            e.printStackTrace();
+            // Fail-open
+            return ValidationResult.success("Validation skipped due to error");
+        }
+    }
+
+    /**
+     * Extract parent region ID from dependency field value.
+     * The dependency value could be a full entity object or just the region ID.
+     * 
+     * @param depValue The dependency field value from InputJson
+     * @param config The validation rule config
+     * @return The parent region ID, or null if not found
+     */
+    private String extractParentRegionId(JsonElement depValue, JsonObject config) {
+        try {
+            // Get the property path from config (e.g., "WgRegionId")
+            String regionPath = config.has("parentRegionPath") 
+                ? config.get("parentRegionPath").getAsString()
+                : "WgRegionId";
+            
+            // If depValue is a JSON object (Town entity), extract the region property
+            if (depValue.isJsonObject()) {
+                JsonObject entity = depValue.getAsJsonObject();
+                if (entity.has(regionPath)) {
+                    JsonElement regionIdElement = entity.get(regionPath);
+                    if (regionIdElement.isJsonPrimitive()) {
+                        return regionIdElement.getAsString();
+                    }
+                }
+                
+                // Try lowercase variant
+                String lowerPath = regionPath.toLowerCase();
+                if (entity.has(lowerPath)) {
+                    return entity.get(lowerPath).getAsString();
+                }
+            }
+            
+            // If depValue is just the region ID string
+            if (depValue.isJsonPrimitive()) {
+                return depValue.getAsString();
+            }
+            
+            return null;
+        } catch (Exception e) {
+            LOGGER.warning("Error extracting parent region ID: " + e.getMessage());
+            return null;
+        }
+    }
+        /**
      * Called when a player enters a region (legacy support).
      * If the player is handling a WgRegionId task, captures the region ID and completes the task.
      * 
