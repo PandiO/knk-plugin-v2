@@ -55,6 +55,15 @@ public class CachedGate {
     // === Rotation (for DRAWBRIDGE/DOUBLE_DOORS) ===
     private final int rotationMaxAngleDegrees;
 
+    // === WorldGuard Integration ===
+    private String regionClosedId;
+    private String regionOpenedId;
+
+    // === Respawn System ===
+    private boolean canRespawn;
+    private int respawnRateSeconds;
+    private long respawnScheduledTime; // When respawn task is scheduled for
+
     public CachedGate(int id, String name, String gateType, String motionType, String geometryDefinitionMode,
                       int animationDurationTicks, int animationTickRate,
                       Vector anchorPoint, int geometryWidth, int geometryHeight, int geometryDepth,
@@ -82,6 +91,11 @@ public class CachedGate {
         this.currentState = AnimationState.CLOSED;
         this.currentFrame = 0;
         this.animationStartTime = 0;
+        this.regionClosedId = "";
+        this.regionOpenedId = "";
+        this.canRespawn = true;
+        this.respawnRateSeconds = 300;
+        this.respawnScheduledTime = 0;
     }
 
     // === Getters ===
@@ -194,6 +208,26 @@ public class CachedGate {
         return rotationMaxAngleDegrees;
     }
 
+    public String getRegionClosedId() {
+        return regionClosedId;
+    }
+
+    public String getRegionOpenedId() {
+        return regionOpenedId;
+    }
+
+    public boolean isCanRespawn() {
+        return canRespawn;
+    }
+
+    public int getRespawnRateSeconds() {
+        return respawnRateSeconds;
+    }
+
+    public long getRespawnScheduledTime() {
+        return respawnScheduledTime;
+    }
+
     // === Setters for Mutable State ===
 
     public void setCurrentState(AnimationState currentState) {
@@ -212,12 +246,40 @@ public class CachedGate {
         this.healthCurrent = healthCurrent;
     }
 
+    public void setHealthMax(double healthMax) {
+        this.healthMax = healthMax;
+    }
+
     public void setIsDestroyed(boolean isDestroyed) {
         this.isDestroyed = isDestroyed;
     }
 
     public void setIsActive(boolean isActive) {
         this.isActive = isActive;
+    }
+
+    public void setIsInvincible(boolean isInvincible) {
+        this.isInvincible = isInvincible;
+    }
+
+    public void setRegionClosedId(String regionClosedId) {
+        this.regionClosedId = regionClosedId != null ? regionClosedId : "";
+    }
+
+    public void setRegionOpenedId(String regionOpenedId) {
+        this.regionOpenedId = regionOpenedId != null ? regionOpenedId : "";
+    }
+
+    public void setCanRespawn(boolean canRespawn) {
+        this.canRespawn = canRespawn;
+    }
+
+    public void setRespawnRateSeconds(int respawnRateSeconds) {
+        this.respawnRateSeconds = respawnRateSeconds;
+    }
+
+    public void setRespawnScheduledTime(long respawnScheduledTime) {
+        this.respawnScheduledTime = respawnScheduledTime;
     }
 
     // === Setters for Precomputed Data ===
