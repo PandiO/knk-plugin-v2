@@ -1,5 +1,6 @@
 package net.knightsandkings.knk.paper.gates;
 
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
@@ -10,6 +11,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,12 +30,14 @@ import static org.mockito.Mockito.*;
 class GateEventListenerTest {
     private GateEventListener listener;
     private GateManager mockGateManager;
+    private HealthSystem mockHealthSystem;
     private CachedGate testGate;
 
     @BeforeEach
     void setUp() {
         mockGateManager = mock(GateManager.class);
-        listener = new GateEventListener(mockGateManager);
+        mockHealthSystem = mock(HealthSystem.class);
+        listener = new GateEventListener(mockGateManager, mockHealthSystem);
         
         // Create a test gate
         testGate = new CachedGate(

@@ -2,6 +2,7 @@ package net.knightsandkings.knk.paper.listeners;
 
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.paper.gates.HealthSystem;
 import org.bukkit.ChatColor;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
@@ -20,14 +21,17 @@ import java.util.logging.Logger;
 /**
  * Gate event listener handling block break, explosions, and player interactions.
  * Prevents damage to gate blocks and manages gate health.
+ * Integrates with HealthSystem for damage/destruction/respawn mechanics.
  */
 public class GateEventListener implements Listener {
     private static final Logger LOGGER = Logger.getLogger(GateEventListener.class.getName());
 
     private final GateManager gateManager;
+    private final HealthSystem healthSystem;
 
-    public GateEventListener(GateManager gateManager) {
+    public GateEventListener(GateManager gateManager, HealthSystem healthSystem) {
         this.gateManager = gateManager;
+        this.healthSystem = healthSystem;
     }
 
     /**
@@ -72,24 +76,13 @@ public class GateEventListener implements Listener {
             }
 
             if (gate.isInvincible()) {
-                // Invincible gate: cancel damage to this block
+                // Invincible gate: protect block from explosion
                 blocksToRemove.add(block);
             } else {
-                // Vulnerable gate: apply damage
+                // Vulnerable gate: apply damage via HealthSystem
                 double damageAmount = 10.0; // Configurable damage amount
-                gate.setHealthCurrent(Math.max(0, gate.getHealthCurrent() - damageAmount));
-
-                LOGGER.info("Gate " + gate.getName() + " damaged by explosion. Health: " + 
-                           gate.getHealthCurrent() + "/" + gate.getHealthMax());
-
-                if (gate.getHealthCurrent() <= 0) {
-                    // Gate is destroyed
-                    destroyGate(gate);
-                    blocksToRemove.add(block);
-                } else {
-                    // Gate survives, but block is damaged
-                    blocksToRemove.add(block);
-                }
+                healthSystem.applyDamage(gate, damageAmount);
+                blocksToRemove.add(block);
             }
         }
 
@@ -174,18 +167,5 @@ public class GateEventListener implements Listener {
         // 3. Use spatial indexing for performance
         
         return false; // Placeholder
-    }
-
-    /**
-     * Handle gate destruction.
-     */
-    private void destroyGate(CachedGate gate) {
-        gate.setIsDestroyed(true);
-        gate.setIsActive(false);
-
-        LOGGER.warning("Gate " + gate.getName() + " has been destroyed!");
-
-        // TODO: Persist destruction to API
-        // TODO: Schedule respawn if gate has respawn enabled
     }
 }
