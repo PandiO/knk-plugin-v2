@@ -5,6 +5,7 @@ import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateFrameCalculator;
 import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.paper.integration.WorldGuardIntegration;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -19,6 +20,7 @@ import java.util.logging.Logger;
 /**
  * Bukkit runnable that handles gate animation on every server tick.
  * Iterates through all gates in OPENING or CLOSING state and updates their block positions.
+ * Integrates with WorldGuard to sync regions when animation completes.
  */
 public class GateAnimationTask extends BukkitRunnable {
     private static final Logger LOGGER = Logger.getLogger(GateAnimationTask.class.getName());
@@ -35,6 +37,7 @@ public class GateAnimationTask extends BukkitRunnable {
     private final GateManager gateManager;
     private final World world;
     private final Material fallbackMaterial;
+    private final WorldGuardIntegration worldGuardIntegration;
     
     private long lastLagCheck = 0;
     private boolean isLagging = false;
@@ -45,11 +48,14 @@ public class GateAnimationTask extends BukkitRunnable {
      * @param gateManager The gate manager containing all cached gates
      * @param world The world to place blocks in
      * @param fallbackMaterial Fallback material if block data is corrupted
+     * @param worldGuardIntegration WorldGuard integration for region sync
      */
-    public GateAnimationTask(GateManager gateManager, World world, Material fallbackMaterial) {
+    public GateAnimationTask(GateManager gateManager, World world, Material fallbackMaterial, 
+                             WorldGuardIntegration worldGuardIntegration) {
         this.gateManager = gateManager;
         this.world = world;
         this.fallbackMaterial = fallbackMaterial != null ? fallbackMaterial : Material.STONE;
+        this.worldGuardIntegration = worldGuardIntegration;
     }
 
     @Override
@@ -194,6 +200,7 @@ public class GateAnimationTask extends BukkitRunnable {
 
     /**
      * Finish opening animation for a gate.
+     * Syncs WorldGuard regions based on new state.
      * 
      * @param gate The gate that finished opening
      */
@@ -209,10 +216,16 @@ public class GateAnimationTask extends BukkitRunnable {
         }
 
         LOGGER.info("Gate " + gate.getName() + " finished opening");
+
+        // Sync WorldGuard regions
+        if (worldGuardIntegration != null) {
+            worldGuardIntegration.syncRegions(gate, AnimationState.OPEN);
+        }
     }
 
     /**
      * Finish closing animation for a gate.
+     * Syncs WorldGuard regions based on new state.
      * 
      * @param gate The gate that finished closing
      */
@@ -227,6 +240,11 @@ public class GateAnimationTask extends BukkitRunnable {
         }
 
         LOGGER.info("Gate " + gate.getName() + " finished closing");
+
+        // Sync WorldGuard regions
+        if (worldGuardIntegration != null) {
+            worldGuardIntegration.syncRegions(gate, AnimationState.CLOSED);
+        }
     }
 
     /**
