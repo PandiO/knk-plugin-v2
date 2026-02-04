@@ -268,6 +268,21 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         
         String outputJson = output.toString();
 
+        // Validate again before completing (safety net)
+        Location validationLocation = context.capturedLocation;
+        if (validationLocation == null) {
+            validationLocation = new Location(player.getWorld(), x, y, z, yaw, pitch);
+        }
+
+        ValidationResult validation = validateLocation(player, validationLocation, context);
+        if (!validation.isValid() && validation.isBlocking()) {
+            player.sendMessage("§c✗ Validation Failed:");
+            player.sendMessage("§c" + validation.getMessage());
+            player.sendMessage("§eTask not completed. Please move to a valid location and type 'save' again.");
+            player.sendMessage("§eOr type 'cancel' to abort the task.");
+            return;
+        }
+
         // Complete the task via API
         // Backend will extract this data and create Location entity during finalization
         worldTasksApi.complete(context.taskId, outputJson)
