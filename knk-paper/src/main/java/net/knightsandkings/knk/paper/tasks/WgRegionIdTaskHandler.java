@@ -19,6 +19,7 @@ import com.sk89q.worldguard.protection.regions.ProtectedPolygonalRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import net.knightsandkings.knk.core.domain.validation.ValidationResult;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
+import net.knightsandkings.knk.paper.utils.PlaceholderInterpolationUtil;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
@@ -951,6 +952,13 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             // Parse config
             JsonObject config = JsonParser.parseString(rule.get("configJson").getAsString()).getAsJsonObject();
             
+            // Get pre-resolved placeholders from InputJson (if provided by frontend)
+            JsonObject preResolvedPlaceholders = new JsonObject();
+            if (rule.has("preResolvedPlaceholders") && !rule.get("preResolvedPlaceholders").isJsonNull()) {
+                preResolvedPlaceholders = rule.getAsJsonObject("preResolvedPlaceholders");
+                LOGGER.fine("Pre-resolved placeholders from frontend: " + preResolvedPlaceholders.toString());
+            }
+            
             // Get parent region ID from dependency field value
             if (!rule.has("dependencyFieldValue") || rule.get("dependencyFieldValue").isJsonNull()) {
                 return ValidationResult.success("No dependency value - validation skipped");
@@ -977,8 +985,18 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             // Get parent region
             ProtectedRegion parentRegion = regionManager.getRegion(parentRegionId);
             if (parentRegion == null) {
+                // Create computed placeholders
+                JsonObject computedPlaceholders = new JsonObject();
+                computedPlaceholders.addProperty("regionName", parentRegionId);
+                
+                // Merge with pre-resolved placeholders
+                JsonObject allPlaceholders = PlaceholderInterpolationUtil.mergePlaceholders(
+                    preResolvedPlaceholders, computedPlaceholders);
+                
+                // Interpolate error message
                 String errorMsg = rule.get("errorMessage").getAsString();
-                errorMsg = errorMsg.replace("{regionName}", parentRegionId);
+                errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
+                
                 return ValidationResult.blockingFailure(errorMsg);
             }
             
@@ -1004,21 +1022,48 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             }
             
             if (!allPointsInside) {
-                String errorMsg = rule.get("errorMessage").getAsString();
-                errorMsg = errorMsg.replace("{regionName}", parentRegion.getId());
+                // Create computed placeholders (plugin-only values)
+                JsonObject computedPlaceholders = new JsonObject();
+                computedPlaceholders.addProperty("regionName", parentRegion.getId());
+                computedPlaceholders.addProperty("parentRegionName", parentRegion.getId());
+                computedPlaceholders.addProperty("violationCount", String.valueOf(violationCount));
                 
+                // Add violations list
                 if (violationCount > maxViolations) {
                     violations.append(String.format(" ... and %d more", violationCount - maxViolations));
                 }
-                errorMsg = errorMsg.replace("{violations}", violations.toString());
+                computedPlaceholders.addProperty("violations", violations.toString());
+                
+                // Merge pre-resolved placeholders with computed placeholders
+                // Computed placeholders take precedence (override)
+                JsonObject allPlaceholders = PlaceholderInterpolationUtil.mergePlaceholders(
+                    preResolvedPlaceholders, computedPlaceholders);
+                
+                // Interpolate error message with all placeholders
+                String errorMsg = rule.get("errorMessage").getAsString();
+                errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
                 
                 boolean isBlocking = rule.has("isBlocking") && rule.get("isBlocking").getAsBoolean();
                 return new ValidationResult(false, errorMsg, isBlocking);
             }
             
-            // Success
-            player.sendMessage("§a✓ Region is fully contained in: " + parentRegion.getId());
-            return ValidationResult.success("Region is fully contained");
+            // Success - interpolate success message if present
+            String successMsg = "Region is fully contained";
+            if (rule.has("successMessage") && !rule.get("successMessage").isJsonNull()) {
+                // Create computed placeholders for success message
+                JsonObject computedPlaceholders = new JsonObject();
+                computedPlaceholders.addProperty("regionName", parentRegion.getId());
+                computedPlaceholders.addProperty("parentRegionName", parentRegion.getId());
+                
+                JsonObject allPlaceholders = PlaceholderInterpolationUtil.mergePlaceholders(
+                    preResolvedPlaceholders, computedPlaceholders);
+                
+                successMsg = rule.get("successMessage").getAsString();
+                successMsg = PlaceholderInterpolationUtil.interpolate(successMsg, allPlaceholders);
+            }
+            
+            player.sendMessage("§a✓ " + successMsg);
+            return ValidationResult.success(successMsg);
             
         } catch (Exception e) {
             LOGGER.warning("RegionContainment validation error: " + e.getMessage());
