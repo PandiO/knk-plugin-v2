@@ -11,6 +11,7 @@ import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import net.knightsandkings.knk.core.domain.validation.ValidationResult;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
+import net.knightsandkings.knk.paper.utils.PlaceholderInterpolationUtil;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
@@ -367,6 +368,16 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         try {
             // Parse config
             JsonObject config = JsonParser.parseString(rule.get("configJson").getAsString()).getAsJsonObject();
+
+            //Log config for debugging
+            LOGGER.fine("Validating LocationInsideRegion with config: " + config.toString());
+            
+            // Get pre-resolved placeholders from InputJson (if provided by frontend)
+            JsonObject preResolvedPlaceholders = new JsonObject();
+            if (rule.has("preResolvedPlaceholders") && !rule.get("preResolvedPlaceholders").isJsonNull()) {
+                preResolvedPlaceholders = rule.getAsJsonObject("preResolvedPlaceholders");
+                LOGGER.fine("Pre-resolved placeholders from frontend: " + preResolvedPlaceholders.toString());
+            }
             
             // Get parent region ID from dependency field value
             if (!rule.has("dependencyFieldValue") || rule.get("dependencyFieldValue").isJsonNull()) {
@@ -394,8 +405,18 @@ public class LocationTaskHandler implements IWorldTaskHandler {
             // Get parent region
             ProtectedRegion parentRegion = regionManager.getRegion(parentRegionId);
             if (parentRegion == null) {
+                // Create computed placeholders
+                JsonObject computedPlaceholders = new JsonObject();
+                computedPlaceholders.addProperty("regionName", parentRegionId);
+                
+                // Merge with pre-resolved placeholders
+                JsonObject allPlaceholders = PlaceholderInterpolationUtil.mergePlaceholders(
+                    preResolvedPlaceholders, computedPlaceholders);
+                
+                // Interpolate error message
                 String errorMsg = rule.get("errorMessage").getAsString();
-                errorMsg = errorMsg.replace("{regionName}", parentRegionId);
+                errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
+                
                 return ValidationResult.blockingFailure(errorMsg);
             }
             
@@ -404,18 +425,43 @@ public class LocationTaskHandler implements IWorldTaskHandler {
             boolean isInside = parentRegion.contains(blockLoc);
             
             if (!isInside) {
-                String errorMsg = rule.get("errorMessage").getAsString();
-                errorMsg = errorMsg.replace("{regionName}", parentRegion.getId());
-                errorMsg = errorMsg.replace("{coordinates}", 
+                // Create computed placeholders (plugin-only values)
+                JsonObject computedPlaceholders = new JsonObject();
+                computedPlaceholders.addProperty("regionName", parentRegion.getId());
+                computedPlaceholders.addProperty("coordinates", 
                     String.format("(%.2f, %.2f, %.2f)", location.getX(), location.getY(), location.getZ()));
+                
+                // Merge pre-resolved placeholders from frontend with computed placeholders
+                // Computed placeholders take precedence (override)
+                JsonObject allPlaceholders = PlaceholderInterpolationUtil.mergePlaceholders(
+                    preResolvedPlaceholders, computedPlaceholders);
+                
+                // Interpolate error message with all placeholders
+                String errorMsg = rule.get("errorMessage").getAsString();
+                errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
                 
                 boolean isBlocking = rule.has("isBlocking") && rule.get("isBlocking").getAsBoolean();
                 return new ValidationResult(false, errorMsg, isBlocking);
             }
             
-            // Success
-            player.sendMessage("§a✓ Location is inside region: " + parentRegion.getId());
-            return ValidationResult.success("Location is inside region");
+            // Success - interpolate success message if present
+            String successMsg = "Location is inside region";
+            if (rule.has("successMessage") && !rule.get("successMessage").isJsonNull()) {
+                // Create computed placeholders for success message
+                JsonObject computedPlaceholders = new JsonObject();
+                computedPlaceholders.addProperty("regionName", parentRegion.getId());
+                computedPlaceholders.addProperty("coordinates", 
+                    String.format("(%.2f, %.2f, %.2f)", location.getX(), location.getY(), location.getZ()));
+                
+                JsonObject allPlaceholders = PlaceholderInterpolationUtil.mergePlaceholders(
+                    preResolvedPlaceholders, computedPlaceholders);
+                
+                successMsg = rule.get("successMessage").getAsString();
+                successMsg = PlaceholderInterpolationUtil.interpolate(successMsg, allPlaceholders);
+            }
+            
+            player.sendMessage("§a✓ " + successMsg);
+            return ValidationResult.success(successMsg);
             
         } catch (Exception e) {
             LOGGER.warning("LocationInsideRegion validation error: " + e.getMessage());
