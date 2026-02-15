@@ -13,6 +13,7 @@ import com.sk89q.worldedit.regions.Polygonal2DRegion;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.flags.Flag;
+import com.sk89q.worldguard.protection.flags.StringFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.managers.RemovalStrategy;
 import com.sk89q.worldguard.protection.regions.ProtectedPolygonalRegion;
@@ -39,6 +40,9 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     private static final Logger LOGGER = Logger.getLogger(WgRegionIdTaskHandler.class.getName());
     private static final String FIELD_NAME = "WgRegionId";
     private static final String TEMP_REGION_PREFIX = "tempregion_worldtask_";
+    
+    // Custom flag to store creation timestamp
+    public static final StringFlag CREATION_TIMESTAMP = new StringFlag("knk-creation-timestamp");
 
     private final WorldTasksApi worldTasksApi;
     private final Plugin plugin;
@@ -249,6 +253,9 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 // Create WorldGuard region from selection
                 String tempRegionId = TEMP_REGION_PREFIX + context.taskId;
                 ProtectedRegion region = createRegionFromSelection(selection, tempRegionId, context.priority);
+                
+                // Store creation timestamp for retention policy
+                region.setFlag(CREATION_TIMESTAMP, String.valueOf(System.currentTimeMillis()));
                 
                 // Apply flags if any
                 if (!context.flags.isEmpty()) {
