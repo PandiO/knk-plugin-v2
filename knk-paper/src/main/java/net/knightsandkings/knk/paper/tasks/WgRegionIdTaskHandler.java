@@ -643,30 +643,39 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     private ValidationResult validateRegion(Player player, Region selection, TaskContext context) {
         try {
             // Parse validation context from InputJson
+            LOGGER.info("validateRegion called for task " + context.taskId);
+            LOGGER.info("InputJson: " + context.inputJson);
+            
             if (context.inputJson == null || context.inputJson.isEmpty()) {
+                LOGGER.info("InputJson is empty - skipping validation");
                 return ValidationResult.success("No validation configured");
             }
             
             JsonObject input = JsonParser.parseString(context.inputJson).getAsJsonObject();
             if (!input.has("validationContext")) {
+                LOGGER.info("No validationContext in InputJson - skipping validation");
                 return ValidationResult.success("No validation configured");
             }
             
             JsonObject validationContext = input.getAsJsonObject("validationContext");
             if (!validationContext.has("validationRules")) {
+                LOGGER.info("No validationRules in context - skipping validation");
                 return ValidationResult.success("No validation rules");
             }
             
             JsonArray rules = validationContext.getAsJsonArray("validationRules");
+            LOGGER.info("Found " + rules.size() + " validation rule(s)");
             
             // Execute each validation rule
             for (JsonElement ruleElement : rules) {
                 JsonObject rule = ruleElement.getAsJsonObject();
                 String validationType = rule.get("validationType").getAsString();
+                LOGGER.info("Processing validation rule: " + validationType);
                 
                 if ("RegionContainment".equals(validationType)) {
                     ValidationResult result = validateRegionContainment(player, selection, rule);
                     if (!result.isValid()) {
+                        LOGGER.info("Validation failed: " + result.getMessage());
                         return result; // Return first failure
                     }
                 }
@@ -696,25 +705,39 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             // Parse config
             JsonObject config = JsonParser.parseString(rule.get("configJson").getAsString()).getAsJsonObject();
             
+            // Log config for debugging
+            LOGGER.info("Validating RegionContainment with config: " + config.toString());
+            
             // Get pre-resolved placeholders from InputJson (if provided by frontend)
             JsonObject preResolvedPlaceholders = new JsonObject();
             if (rule.has("preResolvedPlaceholders") && !rule.get("preResolvedPlaceholders").isJsonNull()) {
                 preResolvedPlaceholders = rule.getAsJsonObject("preResolvedPlaceholders");
-                LOGGER.fine("Pre-resolved placeholders from frontend: " + preResolvedPlaceholders.toString());
+                LOGGER.info("Pre-resolved placeholders from frontend: " + preResolvedPlaceholders.toString());
             }
+            
+            // Log dependency path information for debugging multi-layer resolution
+            String dependencyPath = rule.has("dependencyPath") && !rule.get("dependencyPath").isJsonNull() 
+                ? rule.get("dependencyPath").getAsString() 
+                : "(none)";
+            LOGGER.info("Dependency path configured: " + dependencyPath);
             
             // Get parent region ID from dependency field value
             if (!rule.has("dependencyFieldValue") || rule.get("dependencyFieldValue").isJsonNull()) {
+                LOGGER.info("No dependency value - validation skipped");
                 return ValidationResult.success("No dependency value - validation skipped");
             }
             
             JsonElement depValue = rule.get("dependencyFieldValue");
+            LOGGER.info("Dependency field value: " + depValue.toString());
             
             // Extract parent region ID from dependency (e.g., Town entity)
             String parentRegionId = extractParentRegionId(depValue, config);
             if (parentRegionId == null || parentRegionId.isEmpty()) {
+                LOGGER.info("No parent region ID resolved - validation skipped");
                 return ValidationResult.success("No parent region ID - validation skipped");
             }
+            
+            LOGGER.info("Resolved parent region ID: " + parentRegionId + " from dependency path: " + dependencyPath);
             
             // Get WorldGuard region manager
             RegionManager regionManager = WorldGuard.getInstance()
@@ -740,30 +763,73 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 // Interpolate error message
                 String errorMsg = rule.get("errorMessage").getAsString();
                 errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
+                LOGGER.info("RegionContainment validation failed: Parent region not found - " + errorMsg);
                 
                 return ValidationResult.blockingFailure(errorMsg);
             }
             
-            // Check if all points in childSelection are inside parentRegion
+            // Check if all vertices of childSelection are inside parentRegion
+            // For polygon regions, check each vertex at min and max Y
+            // This is more efficient than checking every block
             boolean allPointsInside = true;
             StringBuilder violations = new StringBuilder();
             int violationCount = 0;
             final int maxViolations = 5; // Limit violation output
             
-            player.sendMessage("§7Checking region points against parent region '" + parentRegion.getId() + "'...");
+            player.sendMessage("§7Checking region vertices against parent region '" + parentRegion.getId() + "'...");
+            LOGGER.info("Checking selection containment for region type: " + childSelection.getClass().getSimpleName());
             
-            for (BlockVector3 point : childSelection) {
-                if (!parentRegion.contains(point)) {
-                    allPointsInside = false;
-                    violationCount++;
+            if (childSelection instanceof Polygonal2DRegion) {
+                Polygonal2DRegion poly = (Polygonal2DRegion) childSelection;
+                LOGGER.info("Polygonal region with " + poly.getPoints().size() + " vertices, Y range: " + poly.getMinimumY() + " to " + poly.getMaximumY());
+                
+                for (BlockVector2 v2 : poly.getPoints()) {
+                    BlockVector3 v3Min = v2.toBlockVector3(poly.getMinimumY());
+                    BlockVector3 v3Max = v2.toBlockVector3(poly.getMaximumY());
                     
-                    if (violationCount <= maxViolations) {
-                        if (violations.length() > 0) violations.append(", ");
-                        violations.append(String.format("(%.0f, %.0f, %.0f)", 
-                            (double)point.getX(), (double)point.getY(), (double)point.getZ()));
+                    if (!parentRegion.contains(v3Min)) {
+                        allPointsInside = false;
+                        violationCount++;
+                        if (violationCount <= maxViolations) {
+                            if (violations.length() > 0) violations.append(", ");
+                            violations.append(String.format("(%.0f, %.0f, %.0f)", 
+                                (double)v3Min.x(), (double)v3Min.y(), (double)v3Min.z()));
+                        }
+                    }
+                    
+                    if (!parentRegion.contains(v3Max)) {
+                        allPointsInside = false;
+                        violationCount++;
+                        if (violationCount <= maxViolations) {
+                            if (violations.length() > 0) violations.append(", ");
+                            violations.append(String.format("(%.0f, %.0f, %.0f)", 
+                                (double)v3Max.x(), (double)v3Max.y(), (double)v3Max.z()));
+                        }
                     }
                 }
+            } else {
+                // For other selection types, check min/max points (fallback)
+                LOGGER.info("Non-polygonal region, checking min/max points");
+                BlockVector3 min = childSelection.getMinimumPoint();
+                BlockVector3 max = childSelection.getMaximumPoint();
+                
+                if (!parentRegion.contains(min)) {
+                    allPointsInside = false;
+                    violationCount++;
+                    violations.append(String.format("(%.0f, %.0f, %.0f)", 
+                        (double)min.x(), (double)min.y(), (double)min.z()));
+                }
+                
+                if (!parentRegion.contains(max)) {
+                    allPointsInside = false;
+                    violationCount++;
+                    if (violations.length() > 0) violations.append(", ");
+                    violations.append(String.format("(%.0f, %.0f, %.0f)", 
+                        (double)max.x(), (double)max.y(), (double)max.z()));
+                }
             }
+            
+            LOGGER.info("Containment check complete. All points inside: " + allPointsInside + ", Violations: " + violationCount);
             
             if (!allPointsInside) {
                 // Create computed placeholders (plugin-only values)
@@ -788,6 +854,7 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
                 
                 boolean isBlocking = rule.has("isBlocking") && rule.get("isBlocking").getAsBoolean();
+                LOGGER.info("RegionContainment validation failed: " + violationCount + " point(s) outside parent region. Blocking: " + isBlocking);
                 return new ValidationResult(false, errorMsg, isBlocking);
             }
             
@@ -807,6 +874,7 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
             }
             
             player.sendMessage("§a✓ " + successMsg);
+            LOGGER.info("RegionContainment validation passed: " + successMsg);
             return ValidationResult.success(successMsg);
             
         } catch (Exception e) {
@@ -832,28 +900,56 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 ? config.get("parentRegionPath").getAsString()
                 : "WgRegionId";
             
+            LOGGER.info("Extracting parent region ID using path: " + regionPath + " from dependency value type: " + depValue.getClass().getSimpleName());
+            
             // If depValue is a JSON object (Town entity), extract the region property
             if (depValue.isJsonObject()) {
                 JsonObject entity = depValue.getAsJsonObject();
+                LOGGER.info("Dependency is JSON object with keys: " + entity.keySet().toString());
+                
+                // Try exact match (PascalCase, e.g., "WgRegionId")
                 if (entity.has(regionPath)) {
                     JsonElement regionIdElement = entity.get(regionPath);
                     if (regionIdElement.isJsonPrimitive()) {
-                        return regionIdElement.getAsString();
+                        String regionId = regionIdElement.getAsString();
+                        LOGGER.info("Found region ID \"" + regionId + "\" at path: " + regionPath);
+                        return regionId;
                     }
                 }
                 
-                // Try lowercase variant
+                // Try camelCase variant (e.g., "wgRegionId" from "WgRegionId")
+                String camelPath = Character.toLowerCase(regionPath.charAt(0)) + regionPath.substring(1);
+                if (entity.has(camelPath)) {
+                    JsonElement regionIdElement = entity.get(camelPath);
+                    if (regionIdElement.isJsonPrimitive()) {
+                        String regionId = regionIdElement.getAsString();
+                        LOGGER.info("Found region ID \"" + regionId + "\" at camelCase path: " + camelPath);
+                        return regionId;
+                    }
+                }
+                
+                // Try all lowercase as fallback
                 String lowerPath = regionPath.toLowerCase();
                 if (entity.has(lowerPath)) {
-                    return entity.get(lowerPath).getAsString();
+                    JsonElement regionIdElement = entity.get(lowerPath);
+                    if (regionIdElement.isJsonPrimitive()) {
+                        String regionId = regionIdElement.getAsString();
+                        LOGGER.info("Found region ID \"" + regionId + "\" at lowercase path: " + lowerPath);
+                        return regionId;
+                    }
                 }
+                
+                LOGGER.warning("Could not find region property \"" + regionPath + "\", \"" + camelPath + "\", or \"" + lowerPath + "\" in dependency object");
             }
             
             // If depValue is just the region ID string
             if (depValue.isJsonPrimitive()) {
-                return depValue.getAsString();
+                String regionId = depValue.getAsString();
+                LOGGER.info("Dependency is primitive value: \"" + regionId + "\"");
+                return regionId;
             }
             
+            LOGGER.warning("Could not extract parent region ID from dependency value");
             return null;
         } catch (Exception e) {
             LOGGER.warning("Error extracting parent region ID: " + e.getMessage());

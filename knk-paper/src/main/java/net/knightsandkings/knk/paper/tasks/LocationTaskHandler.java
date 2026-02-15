@@ -513,28 +513,56 @@ public class LocationTaskHandler implements IWorldTaskHandler {
                 ? config.get("regionPropertyPath").getAsString()
                 : "WgRegionId";
             
+            LOGGER.info("Extracting parent region ID using path: " + regionPath + " from dependency value type: " + depValue.getClass().getSimpleName());
+            
             // If depValue is a JSON object (Town entity), extract the region property
             if (depValue.isJsonObject()) {
                 JsonObject entity = depValue.getAsJsonObject();
+                LOGGER.info("Dependency is JSON object with keys: " + entity.keySet().toString());
+                
+                // Try exact match (PascalCase, e.g., "WgRegionId")
                 if (entity.has(regionPath)) {
                     JsonElement regionIdElement = entity.get(regionPath);
                     if (regionIdElement.isJsonPrimitive()) {
-                        return regionIdElement.getAsString();
+                        String regionId = regionIdElement.getAsString();
+                        LOGGER.info("Found region ID \"" + regionId + "\" at path: " + regionPath);
+                        return regionId;
                     }
                 }
                 
-                // Try lowercase variant
+                // Try camelCase variant (e.g., "wgRegionId" from "WgRegionId")
+                String camelPath = Character.toLowerCase(regionPath.charAt(0)) + regionPath.substring(1);
+                if (entity.has(camelPath)) {
+                    JsonElement regionIdElement = entity.get(camelPath);
+                    if (regionIdElement.isJsonPrimitive()) {
+                        String regionId = regionIdElement.getAsString();
+                        LOGGER.info("Found region ID \"" + regionId + "\" at camelCase path: " + camelPath);
+                        return regionId;
+                    }
+                }
+                
+                // Try all lowercase as fallback
                 String lowerPath = regionPath.toLowerCase();
                 if (entity.has(lowerPath)) {
-                    return entity.get(lowerPath).getAsString();
+                    JsonElement regionIdElement = entity.get(lowerPath);
+                    if (regionIdElement.isJsonPrimitive()) {
+                        String regionId = regionIdElement.getAsString();
+                        LOGGER.info("Found region ID \"" + regionId + "\" at lowercase path: " + lowerPath);
+                        return regionId;
+                    }
                 }
+                
+                LOGGER.warning("Could not find region property \"" + regionPath + "\", \"" + camelPath + "\", or \"" + lowerPath + "\" in dependency object");
             }
             
             // If depValue is just the region ID string
             if (depValue.isJsonPrimitive()) {
-                return depValue.getAsString();
+                String regionId = depValue.getAsString();
+                LOGGER.info("Dependency is primitive value: \"" + regionId + "\"");
+                return regionId;
             }
             
+            LOGGER.warning("Could not extract parent region ID from dependency value");
             return null;
         } catch (Exception e) {
             LOGGER.warning("Error extracting parent region ID: " + e.getMessage());
