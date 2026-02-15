@@ -316,26 +316,34 @@ public class LocationTaskHandler implements IWorldTaskHandler {
     private ValidationResult validateLocation(Player player, Location location, TaskContext context) {
         try {
             // Parse validation context from InputJson
+            LOGGER.info("validateLocation called for task " + context.taskId);
+            LOGGER.info("InputJson: " + context.inputJson);
+            
             if (context.inputJson == null || context.inputJson.isEmpty()) {
+                LOGGER.info("InputJson is empty - skipping validation");
                 return ValidationResult.success("No validation configured");
             }
             
             JsonObject input = JsonParser.parseString(context.inputJson).getAsJsonObject();
             if (!input.has("validationContext")) {
+                LOGGER.info("No validationContext in InputJson - skipping validation");
                 return ValidationResult.success("No validation configured");
             }
             
             JsonObject validationContext = input.getAsJsonObject("validationContext");
             if (!validationContext.has("validationRules")) {
+                LOGGER.info("No validationRules in context - skipping validation");
                 return ValidationResult.success("No validation rules");
             }
             
             JsonArray rules = validationContext.getAsJsonArray("validationRules");
+            LOGGER.info("Found " + rules.size() + " validation rule(s)");
             
             // Execute each validation rule
             for (JsonElement ruleElement : rules) {
                 JsonObject rule = ruleElement.getAsJsonObject();
                 String validationType = rule.get("validationType").getAsString();
+                LOGGER.info("Processing validation rule: " + validationType);
                 
                 if ("LocationInsideRegion".equals(validationType)) {
                     ValidationResult result = validateLocationInsideRegion(player, location, rule);
@@ -359,6 +367,11 @@ public class LocationTaskHandler implements IWorldTaskHandler {
     /**
      * Validate that a location is inside a WorldGuard region.
      * 
+     * Supports multi-layer dependency path resolution:
+     * - Direct property: "WgRegionId" (Layer 0)
+     * - Single navigation: "Town.WgRegionId" (Layer 1)  
+     * - Multi-layer: "District.Town.WgRegionId" (Layer 2+)
+     * 
      * @param player The player
      * @param location The location to validate
      * @param rule The validation rule configuration
@@ -370,27 +383,39 @@ public class LocationTaskHandler implements IWorldTaskHandler {
             JsonObject config = JsonParser.parseString(rule.get("configJson").getAsString()).getAsJsonObject();
 
             //Log config for debugging
-            LOGGER.fine("Validating LocationInsideRegion with config: " + config.toString());
+            LOGGER.info("Validating LocationInsideRegion with config: " + config.toString());
             
             // Get pre-resolved placeholders from InputJson (if provided by frontend)
             JsonObject preResolvedPlaceholders = new JsonObject();
             if (rule.has("preResolvedPlaceholders") && !rule.get("preResolvedPlaceholders").isJsonNull()) {
                 preResolvedPlaceholders = rule.getAsJsonObject("preResolvedPlaceholders");
-                LOGGER.fine("Pre-resolved placeholders from frontend: " + preResolvedPlaceholders.toString());
+                LOGGER.info("Pre-resolved placeholders from frontend: " + preResolvedPlaceholders.toString());
             }
+            
+            // Log dependency path information for debugging multi-layer resolution
+            String dependencyPath = rule.has("dependencyPath") && !rule.get("dependencyPath").isJsonNull() 
+                ? rule.get("dependencyPath").getAsString() 
+                : "(none)";
+            LOGGER.info("Dependency path configured: " + dependencyPath);
             
             // Get parent region ID from dependency field value
             if (!rule.has("dependencyFieldValue") || rule.get("dependencyFieldValue").isJsonNull()) {
+                LOGGER.info("No dependency value - validation skipped");
                 return ValidationResult.success("No dependency value - validation skipped");
             }
             
             JsonElement depValue = rule.get("dependencyFieldValue");
             
             // Extract parent region ID from dependency (e.g., Town entity)
+            // The backend has already resolved the dependency path, so depValue contains
+            // the final value from navigating the path (e.g., Town.WgRegionId → "town_1")
             String parentRegionId = extractParentRegionId(depValue, config);
             if (parentRegionId == null || parentRegionId.isEmpty()) {
+                LOGGER.info("No parent region ID resolved - validation skipped");
                 return ValidationResult.success("No parent region ID - validation skipped");
             }
+            
+            LOGGER.info("Resolved parent region ID: " + parentRegionId + " from dependency path: " + dependencyPath);
             
             // Get WorldGuard region manager
             RegionManager regionManager = WorldGuard.getInstance()
@@ -416,6 +441,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
                 // Interpolate error message
                 String errorMsg = rule.get("errorMessage").getAsString();
                 errorMsg = PlaceholderInterpolationUtil.interpolate(errorMsg, allPlaceholders);
+                LOGGER.info("LocationInsideRegion validation failed: " + errorMsg);
                 
                 return ValidationResult.blockingFailure(errorMsg);
             }

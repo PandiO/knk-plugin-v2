@@ -2,6 +2,7 @@ package net.knightsandkings.knk.paper.tasks;
 
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldguard.WorldGuard;
+import com.sk89q.worldguard.protection.flags.StringFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import org.bukkit.World;
@@ -25,6 +26,9 @@ public class TempRegionRetentionTask {
     private static final Logger LOGGER = Logger.getLogger(TempRegionRetentionTask.class.getName());
     private static final String TEMP_REGION_PREFIX = "tempregion_worldtask_";
     private static final long RETENTION_MILLIS = 14L * 24 * 60 * 60 * 1000; // 14 days in milliseconds
+    
+    // Custom flag to read creation timestamp (must match the one in WgRegionIdTaskHandler)
+    private static final StringFlag CREATION_TIMESTAMP = new StringFlag("knk-creation-timestamp");
     
     private final Plugin plugin;
     private final long retentionMillis;
@@ -81,15 +85,26 @@ public class TempRegionRetentionTask {
                 // Find all temp regions older than retention period
                 for (ProtectedRegion region : regionManager.getRegions().values()) {
                     if (region.getId().startsWith(TEMP_REGION_PREFIX)) {
-                        // Check region age; if no metadata, assume it's old
-                        long regionAge = System.currentTimeMillis(); // Default to current time if no metadata
+                        // Check region age using creation timestamp flag
+                        String timestampStr = region.getFlag(CREATION_TIMESTAMP);
                         
-                        // Try to extract creation time from region metadata/comments if available
-                        // For now, we'll use a simple heuristic: if region exists, assume reasonable age
-                        // In production, store creation timestamp in region metadata
-                        
-                        if (regionAge >= cutoffTime) {
-                            regionsToDelete.add(region.getId());
+                        if (timestampStr != null) {
+                            try {
+                                long creationTime = Long.parseLong(timestampStr);
+                                
+                                // Only delete if creation time is BEFORE cutoff (i.e., older than retention period)
+                                if (creationTime < cutoffTime) {
+                                    regionsToDelete.add(region.getId());
+                                    LOGGER.fine("Marking region for deletion: " + region.getId() + 
+                                               " (age: " + ((System.currentTimeMillis() - creationTime) / (24 * 60 * 60 * 1000)) + " days)");
+                                }
+                            } catch (NumberFormatException e) {
+                                LOGGER.warning("Invalid creation timestamp for region " + region.getId() + ": " + timestampStr);
+                                // Don't delete if timestamp is invalid - be safe
+                            }
+                        } else {
+                            LOGGER.fine("Skipping region without creation timestamp: " + region.getId());
+                            // Don't delete regions without timestamp - they might be from before this feature
                         }
                     }
                 }
