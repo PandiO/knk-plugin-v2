@@ -259,12 +259,13 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         // The backend workflow finalization process will handle creating the Location entity
         JsonObject output = new JsonObject();
         output.addProperty("fieldName", FIELD_NAME);
+        output.addProperty("name", "Location");
         output.addProperty("x", x);
         output.addProperty("y", y);
         output.addProperty("z", z);
         output.addProperty("yaw", yaw);
         output.addProperty("pitch", pitch);
-        output.addProperty("worldName", worldName);
+        output.addProperty("World", worldName);
         output.addProperty("capturedAt", System.currentTimeMillis());
         
         String outputJson = output.toString();
