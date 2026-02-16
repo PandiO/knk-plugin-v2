@@ -854,6 +854,69 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     }
 
     /**
+     * Check if a child region is fully contained within a parent region.
+     * Used by the Web API to validate region containment rules.
+     * 
+     * @param parentRegionId The parent region ID
+     * @param childRegionId The child region ID
+     * @param requireFullContainment If true, all child region vertices must be inside parent
+     * @return true if the child is contained within the parent (or if requireFullContainment is false), false otherwise
+     */
+    public boolean checkRegionContainment(String parentRegionId, String childRegionId, boolean requireFullContainment) {
+        if (parentRegionId == null || parentRegionId.trim().isEmpty() || 
+            childRegionId == null || childRegionId.trim().isEmpty()) {
+            LOGGER.warning("Cannot check region containment: parentRegionId or childRegionId is null/empty");
+            return false;
+        }
+
+        try {
+            // Find the world containing the parent region
+            World world = findWorldByRegion(parentRegionId);
+            if (world == null) {
+                LOGGER.warning("Cannot check region containment: parent region not found: " + parentRegionId);
+                return false;
+            }
+
+            RegionManager regionManager = WorldGuard.getInstance().getPlatform().getRegionContainer()
+                .get(BukkitAdapter.adapt(world));
+
+            if (regionManager == null) {
+                LOGGER.warning("Cannot check region containment: region manager not available for world " + world.getName());
+                return false;
+            }
+
+            ProtectedRegion parentRegion = regionManager.getRegion(parentRegionId);
+            ProtectedRegion childRegion = regionManager.getRegion(childRegionId);
+
+            if (parentRegion == null) {
+                LOGGER.warning("Cannot check region containment: parent region not found: " + parentRegionId);
+                return false;
+            }
+
+            if (childRegion == null) {
+                LOGGER.warning("Cannot check region containment: child region not found: " + childRegionId);
+                return false;
+            }
+
+            // If requireFullContainment is false, always return true (no validation)
+            if (!requireFullContainment) {
+                return true;
+            }
+
+            // Use the existing containment check logic
+            boolean isContained = isRegionInsideRegion(parentRegion, childRegion);
+            
+            LOGGER.info("Region containment check: " + childRegionId + " inside " + parentRegionId + " = " + isContained);
+            return isContained;
+
+        } catch (Exception e) {
+            LOGGER.warning("Error checking region containment: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
      * Find the world that contains a specific region by name.
      * Searches all loaded worlds for the region.
      * 
