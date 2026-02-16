@@ -36,8 +36,8 @@ public class WorldGuardIntegrationTest {
 
     @Test
     public void testRegionExistsReturnsFalseForEmptyId() {
-        assertFalse(integration.regionExists(""));
-        assertFalse(integration.regionExists(null));
+        assertFalse(integration.regionExists("", null));
+        assertFalse(integration.regionExists(null, null));
     }
 
     @Test
@@ -49,8 +49,8 @@ public class WorldGuardIntegrationTest {
 
         // Should not throw exception
         assertDoesNotThrow(() -> {
-            integration.syncRegions(gate, AnimationState.OPEN);
-            integration.syncRegions(gate, AnimationState.CLOSED);
+            integration.syncRegions(gate, AnimationState.OPEN, null);
+            integration.syncRegions(gate, AnimationState.CLOSED, null);
         });
     }
 
@@ -62,7 +62,7 @@ public class WorldGuardIntegrationTest {
 
         // Should not throw exception
         assertDoesNotThrow(() -> {
-            integration.syncRegions(gate, AnimationState.OPEN);
+            integration.syncRegions(gate, AnimationState.OPEN, null);
         });
     }
 
@@ -74,7 +74,7 @@ public class WorldGuardIntegrationTest {
 
         // Should not throw exception
         assertDoesNotThrow(() -> {
-            integration.syncRegions(gate, AnimationState.CLOSED);
+            integration.syncRegions(gate, AnimationState.CLOSED, null);
         });
     }
 
@@ -83,10 +83,8 @@ public class WorldGuardIntegrationTest {
         // Since we can't properly initialize WorldGuard in tests,
         // we just verify the method doesn't throw exceptions
         assertDoesNotThrow(() -> {
-            boolean exists = integration.regionExists("some_region");
-            // In test environment without proper WorldGuard setup, should return true
-            // because the method assumes region exists if name is not empty
-            assertTrue(exists);
+            boolean exists = integration.regionExists("some_region", null);
+            assertFalse(exists);
         });
     }
 

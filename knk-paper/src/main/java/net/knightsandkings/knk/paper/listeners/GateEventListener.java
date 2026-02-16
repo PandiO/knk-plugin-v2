@@ -1,12 +1,15 @@
 package net.knightsandkings.knk.paper.listeners;
 
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
+import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
+import net.knightsandkings.knk.core.gates.GateFrameCalculator;
 import net.knightsandkings.knk.core.gates.GateManager;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
-import org.bukkit.ChatColor;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -57,7 +60,10 @@ public class GateEventListener implements Listener {
 
         // Prevent breaking gate blocks
         event.setCancelled(true);
-        player.sendMessage(ChatColor.RED + "You cannot break gate blocks. Gate: " + gate.getName());
+        player.sendMessage(
+            Component.text("You cannot break gate blocks. Gate: " + gate.getName())
+                .color(NamedTextColor.RED)
+        );
     }
 
     /**
@@ -113,7 +119,10 @@ public class GateEventListener implements Listener {
             // Check permission
             if (!player.hasPermission("knk.gate.open.*") && 
                 !player.hasPermission("knk.gate.close.*")) {
-                player.sendMessage(ChatColor.RED + "You don't have permission to interact with this gate.");
+                player.sendMessage(
+                    Component.text("You don't have permission to interact with this gate.")
+                        .color(NamedTextColor.RED)
+                );
                 event.setCancelled(true);
                 return;
             }
@@ -160,12 +169,26 @@ public class GateEventListener implements Listener {
      * Simplified implementation - checks stored block snapshots.
      */
     private boolean isBlockPartOfGate(Block block, CachedGate gate) {
-        // This is a placeholder implementation
-        // In a full implementation, you would:
-        // 1. Calculate gate's current block positions based on animation state
-        // 2. Check if the block matches any current position
-        // 3. Use spatial indexing for performance
-        
-        return false; // Placeholder
+        if (block == null || gate == null || gate.getBlocks() == null) {
+            return false;
+        }
+
+        int blockX = block.getX();
+        int blockY = block.getY();
+        int blockZ = block.getZ();
+
+        int frame = gate.getCurrentFrame();
+        for (BlockSnapshot snapshot : gate.getBlocks()) {
+            Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, snapshot, frame);
+            if (worldPos == null) {
+                continue;
+            }
+
+            if (worldPos.getBlockX() == blockX && worldPos.getBlockY() == blockY && worldPos.getBlockZ() == blockZ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
