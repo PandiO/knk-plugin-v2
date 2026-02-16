@@ -18,7 +18,9 @@ import java.util.logging.Logger;
 
 /**
  * Minimal HTTP server to expose region management endpoints for the Web API.
- * Only supports POST /Regions/rename?oldRegionId=...&newRegionId=...
+ * Supports:
+ * - POST /Regions/rename?oldRegionId=...&newRegionId=...
+ * - GET /api/regions/{parentRegionId}/contains-region/{childRegionId}?requireFullContainment=true
  */
 public class RegionHttpServer {
     private static final Logger LOGGER = Logger.getLogger(RegionHttpServer.class.getName());
@@ -38,6 +40,7 @@ public class RegionHttpServer {
     public void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/Regions/rename", new RenameHandler());
+        server.createContext("/api/regions/", new RegionContainmentHandler());
         server.setExecutor(executor);
         server.start();
         LOGGER.info("RegionHttpServer started on port " + port);
@@ -111,6 +114,54 @@ public class RegionHttpServer {
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
+        }
+    }
+
+    /**
+     * Handler for checking region containment.
+     * GET /api/regions/{parentRegionId}/contains-region/{childRegionId}?requireFullContainment=true
+     */
+    private class RegionContainmentHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                send(exchange, 405, "Method Not Allowed");
+                return;
+            }
+
+            // Parse path: /api/regions/{parentRegionId}/contains-region/{childRegionId}
+            String path = exchange.getRequestURI().getPath();
+            String[] parts = path.split("/");
+            
+            // Expected: ["", "api", "regions", "{parentRegionId}", "contains-region", "{childRegionId}"]
+            if (parts.length != 6 || !"api".equals(parts[1]) || !"regions".equals(parts[2]) || !"contains-region".equals(parts[4])) {
+                send(exchange, 400, "Invalid path format. Expected: /api/regions/{parentRegionId}/contains-region/{childRegionId}");
+                return;
+            }
+
+            String parentRegionId = urlDecode(parts[3]);
+            String childRegionId = urlDecode(parts[5]);
+
+            if (parentRegionId.isEmpty() || childRegionId.isEmpty()) {
+                send(exchange, 400, "parentRegionId and childRegionId are required");
+                return;
+            }
+
+            // Parse query parameters
+            Map<String, String> query = parseQuery(exchange.getRequestURI());
+            String requireFullStr = query.getOrDefault("requireFullContainment", "true");
+            boolean requireFullContainment = Boolean.parseBoolean(requireFullStr);
+
+            // Run containment check on main thread to keep WorldGuard safe
+            plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                boolean result = handler.checkRegionContainment(parentRegionId, childRegionId, requireFullContainment);
+                try {
+                    send(exchange, 200, Boolean.toString(result));
+                } catch (IOException e) {
+                    LOGGER.warning("Failed to send response: " + e.getMessage());
+                }
+                return null;
+            });
         }
     }
 }
