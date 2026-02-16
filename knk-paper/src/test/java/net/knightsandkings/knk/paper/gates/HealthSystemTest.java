@@ -2,7 +2,6 @@ package net.knightsandkings.knk.paper.gates;
 
 import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
-import net.knightsandkings.knk.core.gates.GateManager;
 import org.bukkit.util.Vector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -11,7 +10,6 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for HealthSystem.
@@ -20,9 +18,6 @@ import static org.mockito.Mockito.*;
  * NOTE: Some tests require Bukkit runtime and are disabled in unit test environment.
  */
 public class HealthSystemTest {
-
-    @Mock
-    private GateManager mockGateManager;
 
     @Mock
     private GateStructuresApi mockGateStructuresApi;
@@ -35,7 +30,7 @@ public class HealthSystemTest {
     @BeforeEach
     public void setUp() throws Exception {
         MockitoAnnotations.openMocks(this);
-        healthSystem = new HealthSystem(mockGateManager, mockGateStructuresApi, mockPlugin);
+        healthSystem = new HealthSystem(mockGateStructuresApi, mockPlugin);
     }
 
     @Test

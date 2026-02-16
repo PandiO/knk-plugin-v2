@@ -1,14 +1,19 @@
 package net.knightsandkings.knk.paper.gates;
 
 import net.knightsandkings.knk.api.GateStructuresApi;
+import net.knightsandkings.knk.core.domain.gates.AnimationState;
+import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
-import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.core.gates.GateFrameCalculator;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
+import org.bukkit.Material;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.util.logging.Logger;
 
@@ -19,7 +24,6 @@ import java.util.logging.Logger;
 public class HealthSystem {
     private static final Logger LOGGER = Logger.getLogger(HealthSystem.class.getName());
 
-    private final GateManager gateManager;
     private final GateStructuresApi gateStructuresApi;
     private final Plugin plugin;
 
@@ -30,8 +34,7 @@ public class HealthSystem {
      * @param gateStructuresApi The API client for persisting state
      * @param plugin The plugin instance for scheduler access
      */
-    public HealthSystem(GateManager gateManager, GateStructuresApi gateStructuresApi, Plugin plugin) {
-        this.gateManager = gateManager;
+    public HealthSystem(GateStructuresApi gateStructuresApi, Plugin plugin) {
         this.gateStructuresApi = gateStructuresApi;
         this.plugin = plugin;
     }
@@ -85,7 +88,9 @@ public class HealthSystem {
         // Update state
         gate.setIsDestroyed(true);
         gate.setIsActive(false);
-        gate.setCurrentState(net.knightsandkings.knk.core.domain.gates.AnimationState.CLOSED);
+        gate.setCurrentState(AnimationState.CLOSED);
+        gate.setCurrentFrame(0);
+        gate.setAnimationStartTime(0);
         gate.setHealthCurrent(0);
 
         // Remove all gate blocks from the world
@@ -115,20 +120,25 @@ public class HealthSystem {
             }
 
             int blocksRemoved = 0;
-            for (var blockSnapshot : gate.getBlocks()) {
-                Vector relativePos = blockSnapshot.getRelativePosition();
-                if (relativePos == null) {
+            for (BlockSnapshot blockSnapshot : gate.getBlocks()) {
+                Vector worldPos = GateFrameCalculator.calculateBlockPosition(
+                    gate,
+                    blockSnapshot,
+                    gate.getCurrentFrame()
+                );
+
+                if (worldPos == null) {
                     continue;
                 }
-                
+
                 Block block = world.getBlockAt(
-                    (int) relativePos.getX(),
-                    (int) relativePos.getY(),
-                    (int) relativePos.getZ()
+                    worldPos.getBlockX(),
+                    worldPos.getBlockY(),
+                    worldPos.getBlockZ()
                 );
-                
+
                 if (block.getType().isOccluding()) {
-                    block.setType(org.bukkit.Material.AIR);
+                    block.setType(org.bukkit.Material.AIR, false);
                     blocksRemoved++;
                 }
             }
@@ -149,12 +159,18 @@ public class HealthSystem {
             return;
         }
 
-        long delayTicks = (long) gate.getRespawnRateSeconds() * 20L; // Convert seconds to ticks
+        int respawnSeconds = Math.max(0, gate.getRespawnRateSeconds());
+        if (respawnSeconds <= 0) {
+            LOGGER.warning("Respawn rate is 0 for gate '" + gate.getName() + "', skipping respawn scheduling");
+            return;
+        }
+
+        long delayTicks = (long) respawnSeconds * 20L; // Convert seconds to ticks
 
         LOGGER.info("Scheduling respawn for gate '" + gate.getName() + "' in " +
-                   gate.getRespawnRateSeconds() + " seconds");
+                   respawnSeconds + " seconds");
 
-        gate.setRespawnScheduledTime(System.currentTimeMillis() + (gate.getRespawnRateSeconds() * 1000L));
+        gate.setRespawnScheduledTime(System.currentTimeMillis() + (respawnSeconds * 1000L));
 
         // Schedule the respawn task
         new BukkitRunnable() {
@@ -180,14 +196,46 @@ public class HealthSystem {
         // Update state
         gate.setIsDestroyed(false);
         gate.setIsActive(true);
+        gate.setCurrentState(AnimationState.CLOSED);
+        gate.setCurrentFrame(0);
+        gate.setAnimationStartTime(0);
         gate.setHealthCurrent(gate.getHealthMax());
         gate.setRespawnScheduledTime(0);
+
+        restoreGateBlocks(gate);
 
         // Persist respawn to API
         persistGateState(gate);
 
         // Notify players
-        Bukkit.broadcastMessage("§a[KnK] Gate '" + gate.getName() + "' has been restored!");
+        Bukkit.getServer().broadcast(
+            Component.text("[KnK] Gate '" + gate.getName() + "' has been restored!")
+                .color(NamedTextColor.GREEN)
+        );
+    }
+
+    /**
+     * Restore gate blocks to the closed (frame 0) position.
+     */
+    private void restoreGateBlocks(CachedGate gate) {
+        try {
+            World world = Bukkit.getWorlds().get(0); // Get main world
+            if (world == null) {
+                LOGGER.warning("Could not find world to restore gate blocks");
+                return;
+            }
+
+            for (BlockSnapshot blockSnapshot : gate.getBlocks()) {
+                Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, blockSnapshot, 0);
+                if (worldPos == null) {
+                    continue;
+                }
+
+                GateBlockPlacer.placeBlock(world, worldPos, blockSnapshot.getBlockData(), Material.STONE);
+            }
+        } catch (Exception e) {
+            LOGGER.warning("Error restoring gate blocks: " + e.getMessage());
+        }
     }
 
     /**
@@ -232,10 +280,10 @@ public class HealthSystem {
             @Override
             public void run() {
                 try {
-                    // TODO: Call updateGate() method on API when available
-                    // For now, we'll log that this would persist
+                    boolean isOpened = gate.getCurrentState() == AnimationState.OPEN && !gate.isDestroyed();
+                    gateStructuresApi.updateGateState(gate.getId(), isOpened, gate.isDestroyed()).join();
                     LOGGER.fine("Gate state persisted to API: " + gate.getName() +
-                               " (destroyed=" + gate.isDestroyed() + ", health=" + gate.getHealthCurrent() + ")");
+                               " (destroyed=" + gate.isDestroyed() + ", opened=" + isOpened + ")");
                 } catch (Exception e) {
                     LOGGER.warning("Failed to persist gate state: " + e.getMessage());
                 }

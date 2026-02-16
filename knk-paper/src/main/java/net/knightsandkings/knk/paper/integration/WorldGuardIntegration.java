@@ -1,11 +1,15 @@
 package net.knightsandkings.knk.paper.integration;
 
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldguard.WorldGuard;
+import com.sk89q.worldguard.protection.flags.Flags;
+import com.sk89q.worldguard.protection.flags.StateFlag;
+import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import com.sk89q.worldguard.protection.regions.RegionContainer;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
-import org.bukkit.plugin.Plugin;
+import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.logging.Logger;
@@ -17,7 +21,6 @@ import java.util.logging.Logger;
 public class WorldGuardIntegration {
     private static final Logger LOGGER = Logger.getLogger(WorldGuardIntegration.class.getName());
     
-    private final JavaPlugin plugin;
     private final RegionContainer regionContainer;
 
     /**
@@ -26,7 +29,6 @@ public class WorldGuardIntegration {
      * @param plugin The plugin instance for scheduler access
      */
     public WorldGuardIntegration(JavaPlugin plugin) {
-        this.plugin = plugin;
         this.regionContainer = WorldGuard.getInstance().getPlatform().getRegionContainer();
     }
 
@@ -37,22 +39,28 @@ public class WorldGuardIntegration {
      * @param gate The gate being animated
      * @param newState The new animation state (OPEN or CLOSED)
      */
-    public void syncRegions(CachedGate gate, AnimationState newState) {
-        if (regionContainer == null) {
+    public void syncRegions(CachedGate gate, AnimationState newState, World world) {
+        if (regionContainer == null || world == null) {
             LOGGER.fine("Region container not initialized, skipping sync");
             return;
         }
 
         try {
+            RegionManager regionManager = regionContainer.get(BukkitAdapter.adapt(world));
+            if (regionManager == null) {
+                LOGGER.fine("RegionManager not available for world " + world.getName() + ", skipping sync");
+                return;
+            }
+
             if (newState == AnimationState.OPEN) {
                 // Gate is open: disable closed region, enable open region
-                disableRegion(gate.getRegionClosedId());
-                enableRegion(gate.getRegionOpenedId());
+                setEntryFlag(regionManager, gate.getRegionClosedId(), StateFlag.State.ALLOW);
+                setEntryFlag(regionManager, gate.getRegionOpenedId(), StateFlag.State.ALLOW);
                 LOGGER.info("Synced regions for gate '" + gate.getName() + "': CLOSED disabled, OPEN enabled");
             } else if (newState == AnimationState.CLOSED) {
                 // Gate is closed: enable closed region, disable open region
-                enableRegion(gate.getRegionClosedId());
-                disableRegion(gate.getRegionOpenedId());
+                setEntryFlag(regionManager, gate.getRegionClosedId(), StateFlag.State.DENY);
+                setEntryFlag(regionManager, gate.getRegionOpenedId(), StateFlag.State.DENY);
                 LOGGER.info("Synced regions for gate '" + gate.getName() + "': CLOSED enabled, OPEN disabled");
             }
         } catch (Exception e) {
@@ -61,56 +69,24 @@ public class WorldGuardIntegration {
     }
 
     /**
-     * Enable a WorldGuard region by ID.
-     * Region becomes active and enforces its flags.
-     * Note: This is a placeholder for future implementation.
-     * Current WorldGuard API (7.0.10) doesn't support enabling/disabling regions directly.
+     * Apply ENTRY flag to a WorldGuard region if it exists.
      * 
-     * @param regionId The region ID to enable
+     * @param regionManager The WorldGuard region manager
+     * @param regionId The region ID
+     * @param state The entry flag state to apply
      */
-    private void enableRegion(String regionId) {
-        if (regionId == null || regionId.isEmpty()) {
+    private void setEntryFlag(RegionManager regionManager, String regionId, StateFlag.State state) {
+        if (regionManager == null || regionId == null || regionId.isBlank()) {
             return;
         }
 
-        try {
-            // Note: In WorldGuard 7.0.10, regions are always active when they exist.
-            // To truly "enable" a region, you would:
-            // 1. Modify region flags (e.g., set ENTRY to ALLOW)
-            // 2. Or add the region to a specific region manager
-            // 
-            // For now, we log that this would enable the region
-            LOGGER.fine("Enabled region: " + regionId);
-        } catch (Exception e) {
-            LOGGER.warning("Failed to enable region '" + regionId + "': " + e.getMessage());
-        }
-    }
-
-    /**
-     * Disable a WorldGuard region by ID.
-     * Region becomes inactive and flags are not enforced.
-     * Note: This is a placeholder for future implementation.
-     * Current WorldGuard API (7.0.10) doesn't support enabling/disabling regions directly.
-     * 
-     * @param regionId The region ID to disable
-     */
-    private void disableRegion(String regionId) {
-        if (regionId == null || regionId.isEmpty()) {
+        ProtectedRegion region = regionManager.getRegion(regionId);
+        if (region == null) {
+            LOGGER.fine("Region not found: " + regionId);
             return;
         }
 
-        try {
-            // Note: In WorldGuard 7.0.10, regions cannot be directly disabled.
-            // To truly "disable" a region, you would:
-            // 1. Modify region flags (e.g., set ENTRY to DENY or ALLOW)
-            // 2. Or remove the region from the region manager
-            // 3. Or use a meta-flag to indicate disabled state
-            // 
-            // For now, we log that this would disable the region
-            LOGGER.fine("Disabled region: " + regionId);
-        } catch (Exception e) {
-            LOGGER.warning("Failed to disable region '" + regionId + "': " + e.getMessage());
-        }
+        region.setFlag(Flags.ENTRY, state);
     }
 
     /**
@@ -119,15 +95,18 @@ public class WorldGuardIntegration {
      * @param regionId The region ID to check
      * @return true if region exists, false otherwise
      */
-    public boolean regionExists(String regionId) {
-        if (regionId == null || regionId.isEmpty() || regionContainer == null) {
+    public boolean regionExists(String regionId, World world) {
+        if (regionId == null || regionId.isEmpty() || regionContainer == null || world == null) {
             return false;
         }
 
         try {
-            // TODO: Implement region lookup when we have proper world reference
-            // For now, assume region exists if name is not empty
-            return true;
+            RegionManager regionManager = regionContainer.get(BukkitAdapter.adapt(world));
+            if (regionManager == null) {
+                return false;
+            }
+
+            return regionManager.hasRegion(regionId);
         } catch (Exception e) {
             LOGGER.fine("Error checking region existence for '" + regionId + "': " + e.getMessage());
             return false;

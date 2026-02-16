@@ -103,13 +103,14 @@ public class GateStructuresApiImpl extends BaseApiImpl implements GateStructures
     }
 
     @Override
-    public CompletableFuture<Void> updateGateState(int id, boolean isOpened) {
+    public CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed) {
         return CompletableFuture.supplyAsync(() -> {
             String url = baseUrl + GATE_STRUCTURES_ENDPOINT + "/" + id + "/state";
             
             try {
                 Map<String, Boolean> payload = new HashMap<>();
                 payload.put("isOpened", isOpened);
+                payload.put("isDestroyed", isDestroyed);
                 String json = objectMapper.writeValueAsString(payload);
                 
                 Request request = newRequest(url)

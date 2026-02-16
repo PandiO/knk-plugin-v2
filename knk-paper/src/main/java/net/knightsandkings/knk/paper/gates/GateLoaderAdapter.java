@@ -89,6 +89,11 @@ public class GateLoaderAdapter {
             dto.getFaceDirection() != null ? dto.getFaceDirection() : "north"
         );
 
+        gate.setRegionClosedId(dto.getRegionClosedId());
+        gate.setRegionOpenedId(dto.getRegionOpenedId());
+        gate.setCanRespawn(dto.getCanRespawn() != null ? dto.getCanRespawn() : true);
+        gate.setRespawnRateSeconds(dto.getRespawnRateSeconds() != null ? dto.getRespawnRateSeconds() : 300);
+
         // Precompute local basis vectors
         precomputeBasisVectors(gate, dto);
 

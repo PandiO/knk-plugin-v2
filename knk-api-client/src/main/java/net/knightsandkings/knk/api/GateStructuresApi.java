@@ -40,7 +40,7 @@ public interface GateStructuresApi {
      * @param isOpened New opened state
      * @return CompletableFuture that completes when update is done
      */
-    CompletableFuture<Void> updateGateState(int id, boolean isOpened);
+    CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed);
 
     /**
      * Get all block snapshots for a specific gate.

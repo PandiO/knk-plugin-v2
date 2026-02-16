@@ -186,7 +186,6 @@ public class GateAnimationTask extends BukkitRunnable {
      */
     private boolean shouldBlockExist(CachedGate gate, int frame) {
         AnimationState state = gate.getCurrentState();
-        int totalFrames = gate.getAnimationDurationTicks();
 
         if (state == AnimationState.OPENING) {
             // Opening: blocks exist until we reach their removal frame
@@ -219,7 +218,7 @@ public class GateAnimationTask extends BukkitRunnable {
 
         // Sync WorldGuard regions
         if (worldGuardIntegration != null) {
-            worldGuardIntegration.syncRegions(gate, AnimationState.OPEN);
+            worldGuardIntegration.syncRegions(gate, AnimationState.OPEN, world);
         }
     }
 
@@ -243,7 +242,7 @@ public class GateAnimationTask extends BukkitRunnable {
 
         // Sync WorldGuard regions
         if (worldGuardIntegration != null) {
-            worldGuardIntegration.syncRegions(gate, AnimationState.CLOSED);
+            worldGuardIntegration.syncRegions(gate, AnimationState.CLOSED, world);
         }
     }
 
