@@ -3,6 +3,7 @@ package net.knightsandkings.knk.paper.http;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import net.knightsandkings.knk.paper.tasks.LocationTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import org.bukkit.plugin.Plugin;
 
@@ -20,6 +21,7 @@ import java.util.logging.Logger;
  * Minimal HTTP server to expose region management endpoints for the Web API.
  * Supports:
  * - POST /Regions/rename?oldRegionId=...&newRegionId=...
+ * - GET /api/regions/{regionId}/contains-location?x=...&z=...&allowBoundary=false
  * - GET /api/regions/{parentRegionId}/contains-region/{childRegionId}?requireFullContainment=true
  */
 public class RegionHttpServer {
@@ -119,6 +121,7 @@ public class RegionHttpServer {
 
     /**
      * Handler for checking region containment.
+        * GET /api/regions/{regionId}/contains-location?x=...&z=...&allowBoundary=false
      * GET /api/regions/{parentRegionId}/contains-region/{childRegionId}?requireFullContainment=true
      */
     private class RegionContainmentHandler implements HttpHandler {
@@ -132,10 +135,61 @@ public class RegionHttpServer {
             // Parse path: /api/regions/{parentRegionId}/contains-region/{childRegionId}
             String path = exchange.getRequestURI().getPath();
             String[] parts = path.split("/");
-            
+
+            if (parts.length < 5 || !"api".equals(parts[1]) || !"regions".equals(parts[2])) {
+                send(exchange, 400, "Invalid path format. Expected: /api/regions/{regionId}/contains-location or /api/regions/{parentRegionId}/contains-region/{childRegionId}");
+                return;
+            }
+
+            // /api/regions/{regionId}/contains-location?x=...&z=...&allowBoundary=false
+            if (parts.length == 5 && "contains-location".equals(parts[4])) {
+                String regionId = urlDecode(parts[3]);
+
+                if (regionId.isEmpty()) {
+                    send(exchange, 400, "regionId is required");
+                    return;
+                }
+
+                Map<String, String> query = parseQuery(exchange.getRequestURI());
+                String xStr = query.get("x");
+                String zStr = query.get("z");
+                String allowBoundaryStr = query.getOrDefault("allowBoundary", "false");
+
+                if (xStr == null || zStr == null) {
+                    send(exchange, 400, "x and z are required");
+                    return;
+                }
+
+                final double x;
+                final double z;
+                final boolean allowBoundary;
+
+                try {
+                    x = Double.parseDouble(xStr);
+                    z = Double.parseDouble(zStr);
+                    allowBoundary = Boolean.parseBoolean(allowBoundaryStr);
+                } catch (Exception ex) {
+                    send(exchange, 400, "Invalid query parameters. x and z must be numbers.");
+                    return;
+                }
+
+                plugin.getServer().getScheduler().callSyncMethod(plugin, () -> {
+                    boolean result = LocationTaskHandler.checkLocationInsideRegion(regionId, x, z, allowBoundary);
+                    try {
+                        send(exchange, 200, Boolean.toString(result));
+                    } catch (IOException e) {
+                        LOGGER.warning("Failed to send response: " + e.getMessage());
+                    }
+                    return null;
+                });
+
+                return;
+            }
+
+            // /api/regions/{parentRegionId}/contains-region/{childRegionId}?requireFullContainment=true
             // Expected: ["", "api", "regions", "{parentRegionId}", "contains-region", "{childRegionId}"]
-            if (parts.length != 6 || !"api".equals(parts[1]) || !"regions".equals(parts[2]) || !"contains-region".equals(parts[4])) {
-                send(exchange, 400, "Invalid path format. Expected: /api/regions/{parentRegionId}/contains-region/{childRegionId}");
+            if (parts.length != 6 || !"contains-region".equals(parts[4])) {
+                send(exchange, 400, "Invalid path format. Expected: /api/regions/{regionId}/contains-location or /api/regions/{parentRegionId}/contains-region/{childRegionId}");
                 return;
             }
 
