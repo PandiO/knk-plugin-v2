@@ -12,7 +12,9 @@ import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import net.knightsandkings.knk.core.domain.validation.ValidationResult;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.paper.utils.PlaceholderInterpolationUtil;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
@@ -567,6 +569,69 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         } catch (Exception e) {
             LOGGER.warning("Error extracting parent region ID: " + e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Check whether a world position (x,z) is inside the specified WorldGuard region.
+     * Used by RegionHttpServer endpoint: /api/regions/{regionId}/contains
+     */
+    public static boolean checkLocationInsideRegion(String regionId, double x, double z, boolean allowBoundary) {
+        if (regionId == null || regionId.trim().isEmpty()) {
+            LOGGER.warning("Cannot check location containment: regionId is null/empty");
+            return false;
+        }
+
+        try {
+            for (World world : Bukkit.getWorlds()) {
+                RegionManager regionManager = WorldGuard.getInstance().getPlatform().getRegionContainer()
+                    .get(BukkitAdapter.adapt(world));
+
+                if (regionManager == null) {
+                    continue;
+                }
+
+                ProtectedRegion region = regionManager.getRegion(regionId);
+                if (region == null) {
+                    continue;
+                }
+
+                var minPoint = region.getMinimumPoint();
+                var probe = BlockVector3.at(x, minPoint.getY(), z);
+
+                boolean contains = region.contains(probe);
+                if (!contains) {
+                    LOGGER.info("Location containment check: region=" + regionId + ", x=" + x + ", z=" + z + " -> false");
+                    return false;
+                }
+
+                if (!allowBoundary) {
+                    var epsilon = 0.001d;
+                    var probeLeft = BlockVector3.at(x - epsilon, minPoint.getY(), z);
+                    var probeRight = BlockVector3.at(x + epsilon, minPoint.getY(), z);
+                    var probeNorth = BlockVector3.at(x, minPoint.getY(), z - epsilon);
+                    var probeSouth = BlockVector3.at(x, minPoint.getY(), z + epsilon);
+
+                    boolean strictlyInside =
+                        region.contains(probeLeft) &&
+                        region.contains(probeRight) &&
+                        region.contains(probeNorth) &&
+                        region.contains(probeSouth);
+
+                    LOGGER.info("Location containment check (strict): region=" + regionId + ", x=" + x + ", z=" + z + " -> " + strictlyInside);
+                    return strictlyInside;
+                }
+
+                LOGGER.info("Location containment check (allowBoundary): region=" + regionId + ", x=" + x + ", z=" + z + " -> true");
+                return true;
+            }
+
+            LOGGER.warning("Cannot check location containment: region not found in loaded worlds: " + regionId);
+            return false;
+        } catch (Exception e) {
+            LOGGER.warning("Error checking location containment for region " + regionId + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
         }
     }
 }
