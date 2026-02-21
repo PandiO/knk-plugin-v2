@@ -16,6 +16,7 @@ import com.sk89q.worldguard.protection.flags.Flag;
 import com.sk89q.worldguard.protection.flags.StringFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.managers.RemovalStrategy;
+import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedPolygonalRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import net.knightsandkings.knk.core.domain.validation.ValidationResult;
@@ -26,6 +27,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -422,14 +424,91 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
     }
     /**
      * Check if a WorldGuard region is completely inside another WorldGuard region.
-     * Compares the bounds of the child region against the parent region.
+     * Supports cuboid, polygon2d and polygon3d (polyhedral) regions.
      */
     private boolean isRegionInsideRegion(ProtectedRegion parentRegion, ProtectedRegion childRegion) {
+        if (childRegion instanceof ProtectedPolygonalRegion) {
+            ProtectedPolygonalRegion polygonRegion = (ProtectedPolygonalRegion) childRegion;
+            return isPolygonal2DInsideRegion(parentRegion, polygonRegion.getPoints(),
+                polygonRegion.getMinimumPoint().y(), polygonRegion.getMaximumPoint().y());
+        }
+
+        if (childRegion instanceof ProtectedCuboidRegion) {
+            return isCuboidInsideRegion(parentRegion, (ProtectedCuboidRegion) childRegion);
+        }
+
+        if ("ProtectedPolyhedralRegion".equals(childRegion.getClass().getSimpleName())) {
+            return isPolyhedralInsideRegionReflective(parentRegion, childRegion);
+        }
+
         BlockVector3 min = childRegion.getMinimumPoint();
         BlockVector3 max = childRegion.getMaximumPoint();
-        
-        // Check if all corners of child region are inside parent region
         return parentRegion.contains(min) && parentRegion.contains(max);
+    }
+
+    private boolean isPolygonal2DInsideRegion(ProtectedRegion parentRegion, List<BlockVector2> points, int minY, int maxY) {
+        for (BlockVector2 point : points) {
+            BlockVector3 lower = point.toBlockVector3(minY);
+            BlockVector3 upper = point.toBlockVector3(maxY);
+
+            if (!parentRegion.contains(lower) || !parentRegion.contains(upper)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isCuboidInsideRegion(ProtectedRegion parentRegion, ProtectedCuboidRegion cuboidRegion) {
+        BlockVector3 min = cuboidRegion.getMinimumPoint();
+        BlockVector3 max = cuboidRegion.getMaximumPoint();
+
+        int minX = min.x();
+        int minY = min.y();
+        int minZ = min.z();
+        int maxX = max.x();
+        int maxY = max.y();
+        int maxZ = max.z();
+
+        BlockVector3[] corners = new BlockVector3[] {
+            BlockVector3.at(minX, minY, minZ),
+            BlockVector3.at(minX, minY, maxZ),
+            BlockVector3.at(minX, maxY, minZ),
+            BlockVector3.at(minX, maxY, maxZ),
+            BlockVector3.at(maxX, minY, minZ),
+            BlockVector3.at(maxX, minY, maxZ),
+            BlockVector3.at(maxX, maxY, minZ),
+            BlockVector3.at(maxX, maxY, maxZ)
+        };
+
+        for (BlockVector3 corner : corners) {
+            if (!parentRegion.contains(corner)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean isPolyhedralInsideRegionReflective(ProtectedRegion parentRegion, ProtectedRegion polyhedralRegion) {
+        try {
+            Object pointsObject = polyhedralRegion.getClass().getMethod("getPoints").invoke(polyhedralRegion);
+            if (!(pointsObject instanceof Iterable)) {
+                return false;
+            }
+
+            for (Object point : (Iterable<?>) pointsObject) {
+                if (point instanceof BlockVector3) {
+                    if (!parentRegion.contains((BlockVector3) point)) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        } catch (Exception e) {
+            LOGGER.warning("Failed polyhedral containment check: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -640,7 +719,7 @@ public class WgRegionIdTaskHandler implements IWorldTaskHandler {
                 return true;
             }
 
-            // Use the existing containment check logic
+            // Use shape-aware containment check logic
             boolean isContained = isRegionInsideRegion(parentRegion, childRegion);
             
             LOGGER.info("Region containment check: " + childRegionId + " inside " + parentRegionId + " = " + isContained);
