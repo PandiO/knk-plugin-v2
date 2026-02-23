@@ -9,14 +9,21 @@ import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.paper.mapper.EnchantmentDefinitionBukkitMapper;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -24,8 +31,9 @@ import java.util.Map;
  *
  * Supports:
  * - /knk enchantments list [page] [size]
+ * - /knk enchantments vanilla [page] [size]
  * - /knk enchantments search <id|key|displayName> <value> [page] [size]
- * - /knk enchantments apply <id> [level]
+ * - /knk enchantments apply <id|vanillaName> [level]
  */
 public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
     private final Plugin plugin;
@@ -40,8 +48,9 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
             sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments list [page] [size] | " +
+                    "/knk enchantments vanilla [page] [size] | " +
                     "/knk enchantments search <id|key|displayName> <value> [page] [size] | " +
-                    "/knk enchantments apply <id> [level]");
+                    "/knk enchantments apply <id|vanillaName> [level]");
             return true;
         }
 
@@ -55,12 +64,16 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
                 handleSearch(sender, args);
                 yield true;
             }
+            case "vanilla" -> {
+                handleVanillaList(sender, args);
+                yield true;
+            }
             case "apply" -> {
                 handleApply(sender, args);
                 yield true;
             }
             default -> {
-                sender.sendMessage(ChatColor.YELLOW + "Unknown subcommand. Use: list, search, apply");
+                sender.sendMessage(ChatColor.YELLOW + "Unknown subcommand. Use: list, vanilla, search, apply");
                 yield true;
             }
         };
@@ -119,17 +132,26 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
         }
 
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id> [level]");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id|vanillaName> [level]");
             return;
         }
 
-        int enchantmentDefinitionId = parseInt(args[1], -1);
-        if (enchantmentDefinitionId <= 0) {
-            sender.sendMessage(ChatColor.RED + "Invalid enchantment definition ID.");
-            return;
+        int requestedLevel = -1;
+        int targetEndExclusive = args.length;
+        if (args.length > 2) {
+            int maybeLevel = parseInt(args[args.length - 1], -1);
+            if (maybeLevel > 0) {
+                requestedLevel = maybeLevel;
+                targetEndExclusive = args.length - 1;
+            }
         }
 
-        int requestedLevel = args.length > 2 ? parseInt(args[2], -1) : -1;
+        String target = String.join(" ", java.util.Arrays.copyOfRange(args, 1, targetEndExclusive)).trim();
+        if (target.isBlank()) {
+            sender.sendMessage(ChatColor.RED + "Missing enchantment target.");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id|vanillaName> [level]");
+            return;
+        }
 
         ItemStack heldItem = player.getInventory().getItemInMainHand();
         if (heldItem == null || heldItem.getType().isAir()) {
@@ -137,17 +159,59 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
             return;
         }
 
-        sender.sendMessage(ChatColor.GRAY + "Fetching enchantment definition " + enchantmentDefinitionId + "...");
+        final int finalRequestedLevel = requestedLevel;
 
-        dataAccess.getByIdAsync(enchantmentDefinitionId)
-                .thenAccept(result -> Bukkit.getScheduler().runTask(plugin, () -> applyEnchantment(sender, player, result, requestedLevel)))
-                .exceptionally(ex -> {
-                    Bukkit.getScheduler().runTask(plugin, () -> printError(sender, ex));
-                    return null;
-                });
+        int enchantmentDefinitionId = parseInt(target, -1);
+        if (enchantmentDefinitionId > 0) {
+            sender.sendMessage(ChatColor.GRAY + "Fetching enchantment definition " + enchantmentDefinitionId + "...");
+
+            dataAccess.getByIdAsync(enchantmentDefinitionId)
+                    .thenAccept(result -> Bukkit.getScheduler().runTask(plugin, () -> applyKnkEnchantment(sender, player, result, finalRequestedLevel)))
+                    .exceptionally(ex -> {
+                        Bukkit.getScheduler().runTask(plugin, () -> printError(sender, ex));
+                        return null;
+                    });
+            return;
+        }
+
+        applyVanillaEnchantment(sender, player, target, finalRequestedLevel);
     }
 
-    private void applyEnchantment(CommandSender sender, Player player, FetchResult<KnkEnchantmentDefinition> result, int requestedLevel) {
+    private void handleVanillaList(CommandSender sender, String[] args) {
+        int page = args.length > 1 ? parseInt(args[1], 1) : 1;
+        int size = args.length > 2 ? parseInt(args[2], 10) : 10;
+        page = Math.max(1, page);
+        size = Math.max(1, Math.min(size, 100));
+
+        List<Enchantment> enchantments = getSortedVanillaEnchantments();
+        if (enchantments.isEmpty()) {
+            sender.sendMessage(ChatColor.RED + "No vanilla enchantments available from registry.");
+            return;
+        }
+
+        int totalCount = enchantments.size();
+        int totalPages = Math.max(1, (int) Math.ceil((double) totalCount / size));
+        if (page > totalPages) {
+            page = totalPages;
+        }
+
+        int startIndex = (page - 1) * size;
+        int endIndex = Math.min(startIndex + size, totalCount);
+
+        sender.sendMessage(ChatColor.GREEN + "Vanilla enchantments (" + totalCount + " total):");
+        for (int index = startIndex; index < endIndex; index++) {
+            Enchantment enchantment = enchantments.get(index);
+            String namespaceKey = enchantment.getKey().toString();
+            String displayName = toDisplayName(enchantment);
+            sender.sendMessage(ChatColor.GRAY + "  - " + ChatColor.WHITE + displayName +
+                    ChatColor.GRAY + " [" + namespaceKey + "]");
+        }
+
+        sender.sendMessage(ChatColor.GRAY + "Page " + page + " of " + totalPages +
+                ChatColor.GRAY + " | Use: /knk enchantments vanilla [page] [size]");
+    }
+
+    private void applyKnkEnchantment(CommandSender sender, Player player, FetchResult<KnkEnchantmentDefinition> result, int requestedLevel) {
         KnkEnchantmentDefinition definition = result != null ? result.value().orElse(null) : null;
         if (definition == null) {
             sender.sendMessage(ChatColor.RED + "Enchantment definition not found.");
@@ -166,16 +230,112 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
             return;
         }
 
-        int maxLevel = definition.maxLevel() != null ? Math.max(1, definition.maxLevel()) : resolution.defaultLevel();
         int level = requestedLevel > 0 ? requestedLevel : resolution.defaultLevel();
-        level = Math.min(level, maxLevel);
 
         heldItem.addUnsafeEnchantment(resolution.enchantment(), level);
         player.getInventory().setItemInMainHand(heldItem);
 
         sender.sendMessage(ChatColor.GREEN + "Applied " + ChatColor.AQUA + resolution.namespaceKey() +
                 ChatColor.GREEN + " level " + ChatColor.AQUA + level +
+                ChatColor.GREEN + " from KnK definition to your held item.");
+    }
+
+    private void applyVanillaEnchantment(CommandSender sender, Player player, String target, int requestedLevel) {
+        Enchantment enchantment = resolveVanillaEnchantment(target);
+        if (enchantment == null) {
+            sender.sendMessage(ChatColor.RED + "Vanilla enchantment not found: " + target);
+            sender.sendMessage(ChatColor.GRAY + "Tip: use /knk enchantments vanilla to list names.");
+            return;
+        }
+
+        ItemStack heldItem = player.getInventory().getItemInMainHand();
+        if (heldItem == null || heldItem.getType().isAir()) {
+            sender.sendMessage(ChatColor.RED + "You are no longer holding a valid item.");
+            return;
+        }
+
+        int level = requestedLevel > 0 ? requestedLevel : 1;
+
+        heldItem.addUnsafeEnchantment(enchantment, level);
+        player.getInventory().setItemInMainHand(heldItem);
+
+        sender.sendMessage(ChatColor.GREEN + "Applied vanilla " + ChatColor.AQUA + enchantment.getKey() +
+                ChatColor.GREEN + " level " + ChatColor.AQUA + level +
                 ChatColor.GREEN + " to your held item.");
+    }
+
+    private Enchantment resolveVanillaEnchantment(String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+
+        String trimmed = input.trim();
+        String lowered = trimmed.toLowerCase(Locale.ROOT);
+
+        NamespacedKey directKey = NamespacedKey.fromString(lowered);
+        if (directKey != null) {
+            Enchantment direct = Registry.ENCHANTMENT.get(directKey);
+            if (direct != null) {
+                return direct;
+            }
+        }
+
+        String keyPartCandidate = lowered
+                .replace(' ', '_')
+                .replace('-', '_');
+        NamespacedKey minecraftKey = NamespacedKey.minecraft(keyPartCandidate);
+        Enchantment byKeyPart = Registry.ENCHANTMENT.get(minecraftKey);
+        if (byKeyPart != null) {
+            return byKeyPart;
+        }
+
+        String normalizedInput = normalizeText(trimmed);
+        for (Enchantment enchantment : getSortedVanillaEnchantments()) {
+            String ns = enchantment.getKey().toString();
+            String keyPart = enchantment.getKey().getKey();
+            String display = toDisplayName(enchantment);
+
+            if (normalizeText(ns).equals(normalizedInput)
+                    || normalizeText(keyPart).equals(normalizedInput)
+                    || normalizeText(display).equals(normalizedInput)) {
+                return enchantment;
+            }
+        }
+
+        return null;
+    }
+
+    private List<Enchantment> getSortedVanillaEnchantments() {
+        List<Enchantment> result = new ArrayList<>();
+        for (Enchantment enchantment : Registry.ENCHANTMENT) {
+            if (enchantment != null && enchantment.getKey() != null
+                    && "minecraft".equals(enchantment.getKey().getNamespace())) {
+                result.add(enchantment);
+            }
+        }
+        result.sort(Comparator.comparing(e -> e.getKey().toString()));
+        return result;
+    }
+
+    private String toDisplayName(Enchantment enchantment) {
+        String keyPart = enchantment.getKey().getKey();
+        String[] words = keyPart.split("_");
+        StringBuilder builder = new StringBuilder();
+        for (String word : words) {
+            if (word.isBlank()) continue;
+            if (!builder.isEmpty()) {
+                builder.append(' ');
+            }
+            builder.append(Character.toUpperCase(word.charAt(0)));
+            if (word.length() > 1) {
+                builder.append(word.substring(1));
+            }
+        }
+        return builder.toString();
+    }
+
+    private String normalizeText(String value) {
+        return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     private void printPage(CommandSender sender, Page<KnkEnchantmentDefinition> page) {

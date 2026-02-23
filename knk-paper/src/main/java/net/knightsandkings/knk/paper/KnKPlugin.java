@@ -351,7 +351,7 @@ public class KnKPlugin extends JavaPlugin {
         if (knkCommand != null) {
             // Use "localhost" as default serverId; TODO: make this configurable
             String serverId = "localhost";
-            knkCommand.setExecutor(new KnkAdminCommand(
+            KnkAdminCommand knkAdminCommand = new KnkAdminCommand(
                 this, 
                 apiClient.getHealthApi(), 
                 townsQueryApi, 
@@ -363,7 +363,9 @@ public class KnKPlugin extends JavaPlugin {
                 worldTasksApi,
                 worldTaskHandlerRegistry,
                 serverId
-            ));
+            );
+            knkCommand.setExecutor(knkAdminCommand);
+            knkCommand.setTabCompleter(knkAdminCommand);
             getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");
