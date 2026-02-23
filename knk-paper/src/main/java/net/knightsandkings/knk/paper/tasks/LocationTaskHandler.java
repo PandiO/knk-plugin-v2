@@ -72,6 +72,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         player.sendMessage("§6[WorldTask] Capture your current location.");
         player.sendMessage("§7[WorldTask] Task ID: " + taskId);
         player.sendMessage("§eType 'save' to capture your current position (x, y, z, yaw, pitch)");
+        player.sendMessage("§eType 'save <name>' to capture and set a custom location name (supports spaces)");
         player.sendMessage("§eType 'pause' to temporarily pause the task");
         player.sendMessage("§eType 'resume' to continue after pausing");
         player.sendMessage("§7Or type 'cancel' to abort.");
@@ -111,10 +112,17 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         TaskContext context = activeTasksByPlayer.get(player);
         if (context == null) return false;
 
-        String cmd = message.trim().toLowerCase();
+        String trimmedMessage = message == null ? "" : message.trim();
+        if (trimmedMessage.isEmpty()) {
+            return false;
+        }
+
+        String[] parts = trimmedMessage.split("\\s+", 2);
+        String cmd = parts[0].toLowerCase();
         
         if (cmd.equals("save")) {
-            handleSave(player, context);
+            String locationName = parts.length > 1 ? parts[1].trim() : null;
+            handleSave(player, context, locationName);
             return true;
         } else if (cmd.equals("cancel")) {
             cancel(player);
@@ -133,7 +141,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
     /**
      * Handle save command: capture player location and complete task
      */
-    private void handleSave(Player player, TaskContext context) {
+    private void handleSave(Player player, TaskContext context, String providedLocationName) {
         if (context.paused) {
             player.sendMessage("§c[WorldTask] Task is paused. Type 'resume' to continue.");
             return;
@@ -156,6 +164,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
             float yaw = location.getYaw();
             float pitch = location.getPitch();
             String worldName = location.getWorld().getName();
+            String locationName = resolveLocationName(providedLocationName);
             
             // Store for validation if needed
             context.capturedLocation = location;
@@ -164,6 +173,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
             player.sendMessage(String.format("§7Position: (%.2f, %.2f, %.2f)", x, y, z));
             player.sendMessage(String.format("§7Rotation: yaw=%.2f, pitch=%.2f", yaw, pitch));
             player.sendMessage("§7World: " + worldName);
+            player.sendMessage("§7Name: " + locationName);
             
             // NEW: Validate against rules from InputJson
             player.sendMessage("§7Validating location...");
@@ -185,7 +195,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
             player.sendMessage("§7Completing task...");
             
             // Complete task via API
-            completeTask(player, context, x, y, z, yaw, pitch, worldName);
+            completeTask(player, context, x, y, z, yaw, pitch, worldName, locationName);
             
         } catch (Exception e) {
             player.sendMessage("§c[WorldTask] Error capturing location: " + e.getMessage());
@@ -224,9 +234,9 @@ public class LocationTaskHandler implements IWorldTaskHandler {
      * First creates a Location entity via API, then completes the task with the location ID.
      */
     private void completeTask(Player player, TaskContext context, double x, double y, double z, 
-                              float yaw, float pitch, String worldName) {
+                              float yaw, float pitch, String worldName, String locationName) {
         // Step 1: Create Location entity via API
-        createLocationAndCompleteTask(player, context, x, y, z, yaw, pitch, worldName);
+        createLocationAndCompleteTask(player, context, x, y, z, yaw, pitch, worldName, locationName);
     }
 
     /**
@@ -234,10 +244,10 @@ public class LocationTaskHandler implements IWorldTaskHandler {
      * The Location API must return the created location with its ID.
      */
     private void createLocationAndCompleteTask(Player player, TaskContext context, double x, double y, double z,
-                                                float yaw, float pitch, String worldName) {
+                                                float yaw, float pitch, String worldName, String locationName) {
         // Build Location DTO for API creation
         JsonObject locationDto = new JsonObject();
-        locationDto.addProperty("name", "Location");
+        locationDto.addProperty("name", locationName);
         locationDto.addProperty("x", x);
         locationDto.addProperty("y", y);
         locationDto.addProperty("z", z);
@@ -248,7 +258,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         // Call API to create Location (assuming worldTasksApi has a location creation method)
         // For now, we'll complete the task with the raw data and let the backend handle it
         // This is a fallback if the plugin doesn't have direct Location API access
-        completeTaskWithLocationData(player, context, x, y, z, yaw, pitch, worldName);
+        completeTaskWithLocationData(player, context, x, y, z, yaw, pitch, worldName, locationName);
     }
 
     /**
@@ -256,12 +266,12 @@ public class LocationTaskHandler implements IWorldTaskHandler {
      * The backend will process this and create/update the Location entity.
      */
     private void completeTaskWithLocationData(Player player, TaskContext context, double x, double y, double z,
-                                               float yaw, float pitch, String worldName) {
+                                               float yaw, float pitch, String worldName, String locationName) {
         // Build output JSON with location data
         // The backend workflow finalization process will handle creating the Location entity
         JsonObject output = new JsonObject();
         output.addProperty("fieldName", FIELD_NAME);
-        output.addProperty("name", "Location");
+        output.addProperty("name", locationName);
         output.addProperty("x", x);
         output.addProperty("y", y);
         output.addProperty("z", z);
@@ -295,7 +305,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
                     activeTasksByPlayer.remove(player);
                     player.sendMessage("§a[WorldTask] ✓ Task completed! Location captured.");
                     LOGGER.info("Completed Location task for player " + player.getName() 
-                        + " (task " + context.taskId + ") at position: (" + x + ", " + y + ", " + z + ")");
+                        + " (task " + context.taskId + ") named '" + locationName + "' at position: (" + x + ", " + y + ", " + z + ")");
                 });
             })
             .exceptionally(ex -> {
@@ -305,6 +315,19 @@ public class LocationTaskHandler implements IWorldTaskHandler {
                 });
                 return null;
             });
+    }
+
+    /**
+     * Resolve the location name from player input while preserving current default behavior.
+     * If no name is provided, defaults to "Location".
+     */
+    private String resolveLocationName(String providedLocationName) {
+        if (providedLocationName == null) {
+            return FIELD_NAME;
+        }
+
+        String trimmed = providedLocationName.trim();
+        return trimmed.isEmpty() ? FIELD_NAME : trimmed;
     }
 
     /**
