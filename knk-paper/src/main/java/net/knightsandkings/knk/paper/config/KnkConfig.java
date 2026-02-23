@@ -123,6 +123,7 @@ public record KnkConfig(
         EntitySettings structures,
         EntitySettings streets,
         EntitySettings locations,
+        EntitySettings enchantments,
         EntitySettings domains,
         EntitySettings health
     ) {
@@ -134,6 +135,7 @@ public record KnkConfig(
                 EntitySettings.defaults(), // structures
                 EntitySettings.defaults(), // streets
                 EntitySettings.defaults(), // locations
+                EntitySettings.defaults(), // enchantments
                 EntitySettings.defaults(), // domains
                 EntitySettings.defaults()  // health
             );

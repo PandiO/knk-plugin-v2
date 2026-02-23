@@ -17,7 +17,11 @@ import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.core.ports.api.EnchantmentDefinitionsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
+import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
@@ -59,6 +63,7 @@ public class KnKPlugin extends JavaPlugin {
     private DataAccessFactory dataAccessFactory;
     private TownsQueryApi townsQueryApi;
     private LocationsQueryApi locationsQueryApi;
+    private EnchantmentDefinitionsQueryApi enchantmentDefinitionsQueryApi;
     private DistrictsQueryApi districtsQueryApi;
     private StreetsQueryApi streetsQueryApi;
     private StructuresQueryApi structuresQueryApi;
@@ -67,7 +72,7 @@ public class KnKPlugin extends JavaPlugin {
     private UsersCommandApi usersCommandApi;
     private UsersDataAccess usersDataAccess;
     private TownsDataAccess townsDataAccess;
-    private UserAccountApi userAccountApi;
+    private EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private UserManager userManager;
@@ -107,6 +112,7 @@ public class KnKPlugin extends JavaPlugin {
             // Wire TownsQueryApi from client
             this.townsQueryApi = apiClient.getTownsQueryApi();
             this.locationsQueryApi = apiClient.getLocationsQueryApi();
+            this.enchantmentDefinitionsQueryApi = apiClient.getEnchantmentDefinitionsQueryApi();
             this.districtsQueryApi = apiClient.getDistrictsQueryApi();
             this.streetsQueryApi = apiClient.getStreetsQueryApi();
             this.structuresQueryApi = apiClient.getStructuresQueryApi();
@@ -117,6 +123,7 @@ public class KnKPlugin extends JavaPlugin {
             this.worldTasksApi = apiClient.getWorldTasksApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
+            getLogger().info("EnchantmentDefinitionsQueryApi wired from API client");
             getLogger().info("DistrictsQueryApi wired from API client");
             getLogger().info("StreetsQueryApi wired from API client");
             getLogger().info("StructuresQueryApi wired from API client");
@@ -204,15 +211,9 @@ public class KnKPlugin extends JavaPlugin {
                 cacheManager.getTownCache(),
                 townsQueryApi
             );
-            this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
-            this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
-                cacheManager.getUserCache(),
-                usersQueryApi,
-                usersCommandApi
-            );
-            this.townsDataAccess = dataAccessFactory.createTownsDataAccess(
-                cacheManager.getTownCache(),
-                townsQueryApi
+            this.enchantmentDefinitionsDataAccess = dataAccessFactory.createEnchantmentDefinitionsDataAccess(
+                config.cache().ttl(),
+                enchantmentDefinitionsQueryApi
             );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
             getLogger().info("Data access factory initialized with entity-specific settings");
@@ -355,6 +356,7 @@ public class KnKPlugin extends JavaPlugin {
                 apiClient.getHealthApi(), 
                 townsQueryApi, 
                 locationsQueryApi, 
+                enchantmentDefinitionsDataAccess,
                 districtsQueryApi, 
                 streetsQueryApi, 
                 cacheManager,

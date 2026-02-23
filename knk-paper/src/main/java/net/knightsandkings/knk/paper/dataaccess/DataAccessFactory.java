@@ -120,6 +120,21 @@ public class DataAccessFactory {
         DataAccessSettings settings = buildSettings(entitySettings.locations(), "Locations");
         return new LocationsDataAccess(ttl, locationsQueryApi, settings);
     }
+
+    /**
+     * Create an EnchantmentDefinitionsDataAccess gateway with configured settings.
+     *
+     * @param ttl Cache TTL duration
+     * @param enchantmentDefinitionsQueryApi EnchantmentDefinitions query API port
+     * @return Configured EnchantmentDefinitionsDataAccess instance
+     */
+    public EnchantmentDefinitionsDataAccess createEnchantmentDefinitionsDataAccess(
+        Duration ttl,
+        EnchantmentDefinitionsQueryApi enchantmentDefinitionsQueryApi
+    ) {
+        DataAccessSettings settings = buildSettings(entitySettings.enchantments(), "EnchantmentDefinitions");
+        return new EnchantmentDefinitionsDataAccess(ttl, enchantmentDefinitionsQueryApi, settings);
+    }
     
     /**
      * Create a DomainsDataAccess gateway with configured settings.
