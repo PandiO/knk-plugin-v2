@@ -70,5 +70,25 @@ public class HelpSubcommand {
                 sender.sendMessage(ChatColor.WHITE + "  " + example);
             }
         }
+
+        if ("enchantments".equalsIgnoreCase(meta.name())) {
+            sender.sendMessage("");
+            sender.sendMessage(ChatColor.AQUA + "Subcommands:");
+            sender.sendMessage(ChatColor.WHITE + "  /knk enchantments list [page] [size]");
+            sender.sendMessage(ChatColor.WHITE + "  /knk enchantments search <id|key|displayName> <value> [page] [size]");
+            sender.sendMessage(ChatColor.WHITE + "  /knk enchantments apply <id> [level]");
+
+            sender.sendMessage("");
+            sender.sendMessage(ChatColor.AQUA + "Search fields:");
+            sender.sendMessage(ChatColor.GRAY + "  id" + ChatColor.WHITE + " - exact numeric entity id");
+            sender.sendMessage(ChatColor.GRAY + "  key" + ChatColor.WHITE + " - enchantment key, e.g. minecraft:sharpness");
+            sender.sendMessage(ChatColor.GRAY + "  displayName" + ChatColor.WHITE + " - display name text");
+
+            sender.sendMessage("");
+            sender.sendMessage(ChatColor.AQUA + "Apply notes:");
+            sender.sendMessage(ChatColor.GRAY + "  - You must hold an item in your main hand");
+            sender.sendMessage(ChatColor.GRAY + "  - Optional [level] is clamped to the definition max level");
+            sender.sendMessage(ChatColor.GRAY + "  - Resolved using baseEnchantmentNamespaceKey / minecraft:* key");
+        }
     }
 }

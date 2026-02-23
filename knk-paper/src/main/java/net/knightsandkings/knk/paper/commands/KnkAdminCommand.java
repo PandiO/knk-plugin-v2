@@ -1,5 +1,6 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
@@ -30,6 +31,7 @@ public class KnkAdminCommand implements CommandExecutor {
             HealthApi healthApi, 
             TownsQueryApi townsApi, 
             LocationsQueryApi locationsApi, 
+            EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess,
             DistrictsQueryApi districtsApi, 
             StreetsQueryApi streetsApi, 
             CacheManager cacheManager,
@@ -121,6 +123,24 @@ public class KnkAdminCommand implements CommandExecutor {
                     }
                     return locationHereCommand.onCommand(sender, null, "knk", new String[0]);
                 }
+        );
+
+        // Register enchantment definitions
+        EnchantmentDefinitionsDebugCommand enchantmentsCommand = new EnchantmentDefinitionsDebugCommand(plugin, enchantmentDefinitionsDataAccess);
+        registry.register(
+                new CommandMetadata(
+                        "enchantments",
+                        "List/search enchantment definitions and apply to held item",
+                        "/knk enchantments list [page] [size] | /knk enchantments search <id|key|displayName> <value> [page] [size] | /knk enchantments apply <id> [level]",
+                        "knk.admin",
+                        List.of(
+                                "/knk enchantments list 1 10",
+                                "/knk enchantments search key minecraft:sharpness",
+                                "/knk enchantments apply 1 3"
+                        )
+                ),
+                (sender, args) -> enchantmentsCommand.onCommand(sender, null, "knk", args),
+                "enchantment"
         );
         
         // Register streets
