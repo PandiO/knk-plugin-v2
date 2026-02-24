@@ -5,6 +5,7 @@ import net.knightsandkings.knk.core.domain.common.PagedQuery;
 import net.knightsandkings.knk.core.domain.streets.*;
 import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -84,7 +85,7 @@ public class StreetsDebugCommand implements CommandExecutor {
                 sender.sendMessage(ChatColor.GREEN + "Streets (" + result.items().size() + " of " + result.totalCount() + "):");
 
                 for (StreetSummary street : result.items()) {
-                    String name = street.name() != null ? street.name() : "<unnamed>";
+                    String name = formatText(street.name(), "<unnamed>");
 
                     sender.sendMessage(ChatColor.GRAY + "  [" + ChatColor.AQUA + street.id() + ChatColor.GRAY + "] " +
                             ChatColor.WHITE + name);
@@ -131,7 +132,7 @@ public class StreetsDebugCommand implements CommandExecutor {
         streetsApi.getById(streetId).thenAccept(street -> {
             // Schedule on main thread to send messages
             Bukkit.getScheduler().runTask(plugin, () -> {
-                String name = street.name() != null ? street.name() : "<unnamed>";
+                String name = formatText(street.name(), "<unnamed>");
 
                 sender.sendMessage(ChatColor.GREEN + "Street Details:");
                 sender.sendMessage(ChatColor.GRAY + "  ID: " + ChatColor.AQUA + street.id());
@@ -149,6 +150,7 @@ public class StreetsDebugCommand implements CommandExecutor {
                     sender.sendMessage(ChatColor.GRAY + "  Districts:");
                     for (StreetDistrict district : street.districts()) {
                         String districtName = district.name() != null ? district.name() : "<unnamed>";
+                        districtName = formatText(districtName, "<unnamed>");
                         String wgRegion = district.wgRegionId() != null ? district.wgRegionId() : "-";
                         sender.sendMessage(ChatColor.GRAY + "    [" + ChatColor.AQUA + district.id() + ChatColor.GRAY + "] " +
                                 ChatColor.WHITE + districtName + ChatColor.GRAY + " (WG: " + wgRegion + ")");
@@ -162,6 +164,7 @@ public class StreetsDebugCommand implements CommandExecutor {
                     sender.sendMessage(ChatColor.GRAY + "  Structures:");
                     for (StreetStructure structure : street.structures()) {
                         String structureName = structure.name() != null ? structure.name() : "<unnamed>";
+                        structureName = formatText(structureName, "<unnamed>");
                         String houseNum = structure.houseNumber() != null ? "#" + structure.houseNumber() : "-";
                         sender.sendMessage(ChatColor.GRAY + "    [" + ChatColor.AQUA + structure.id() + ChatColor.GRAY + "] " +
                                 ChatColor.WHITE + structureName + ChatColor.GRAY + " (" + houseNum + ")");
@@ -185,5 +188,10 @@ public class StreetsDebugCommand implements CommandExecutor {
             });
             return null;
         });
+    }
+
+    private String formatText(String value, String fallback) {
+        String raw = (value == null || value.isBlank()) ? fallback : value;
+        return DisplayTextFormatter.translateToLegacy(raw);
     }
 }

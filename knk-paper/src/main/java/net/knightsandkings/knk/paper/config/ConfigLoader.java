@@ -78,6 +78,8 @@ public class ConfigLoader {
             loadEntitySettings(entitiesSection, "streets"),
             loadEntitySettings(entitiesSection, "locations"),
             loadEntitySettings(entitiesSection, "enchantments"),
+            loadEntitySettings(entitiesSection, "itemBlueprints"),
+            loadEntitySettings(entitiesSection, "minecraftMaterials"),
             loadEntitySettings(entitiesSection, "domains"),
             loadEntitySettings(entitiesSection, "health")
         );

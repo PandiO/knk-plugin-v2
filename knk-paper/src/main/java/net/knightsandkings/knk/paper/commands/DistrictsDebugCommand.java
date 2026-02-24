@@ -6,6 +6,7 @@ import net.knightsandkings.knk.core.domain.districts.DistrictDetail;
 import net.knightsandkings.knk.core.domain.districts.DistrictSummary;
 import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
+import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -85,10 +86,10 @@ public class DistrictsDebugCommand implements CommandExecutor {
                 sender.sendMessage(ChatColor.GREEN + "Districts (" + result.items().size() + " of " + result.totalCount() + "):");
                 
                 for (DistrictSummary district : result.items()) {
-                    String name = district.name() != null ? district.name() : "<unnamed>";
-                    String desc = district.description() != null ? district.description() : "(no description)";
+                    String name = formatText(district.name(), "<unnamed>");
+                    String desc = formatText(district.description(), "(no description)");
                     String region = district.wgRegionId() != null ? district.wgRegionId() : "-";
-                    String townName = district.townName() != null ? district.townName() : "?";
+                    String townName = formatText(district.townName(), "?");
                     
                     sender.sendMessage(ChatColor.GRAY + "  [" + ChatColor.AQUA + district.id() + ChatColor.GRAY + "] " +
                             ChatColor.WHITE + name + ChatColor.GRAY + " - " + desc);
@@ -165,9 +166,9 @@ public class DistrictsDebugCommand implements CommandExecutor {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 sender.sendMessage(ChatColor.GREEN + "District Details:");
                 sender.sendMessage(ChatColor.GRAY + "  ID: " + ChatColor.AQUA + district.id());
-                sender.sendMessage(ChatColor.GRAY + "  Name: " + ChatColor.WHITE + (district.name() != null ? district.name() : "<unnamed>"));
+                sender.sendMessage(ChatColor.GRAY + "  Name: " + ChatColor.WHITE + formatText(district.name(), "<unnamed>"));
                 sender.sendMessage(ChatColor.GRAY + "  Description: " + ChatColor.WHITE + 
-                        (district.description() != null ? district.description() : "(none)"));
+                    formatText(district.description(), "(none)"));
                 
                 if (district.createdAt() != null) {
                     sender.sendMessage(ChatColor.GRAY + "  Created: " + ChatColor.WHITE + district.createdAt());
@@ -183,14 +184,14 @@ public class DistrictsDebugCommand implements CommandExecutor {
                 if (district.town() != null) {
                     DistrictDetail.Town town = district.town();
                     sender.sendMessage(ChatColor.GRAY + "  Town: " + ChatColor.WHITE + 
-                            (town.name() != null ? town.name() : "<unnamed>") + 
+                            formatText(town.name(), "<unnamed>") + 
                             ChatColor.GRAY + " [" + town.id() + "]");
                 }
                 
                 if (district.location() != null) {
                     DistrictDetail.Location loc = district.location();
                     sender.sendMessage(ChatColor.GRAY + "  Location: " + ChatColor.AQUA + 
-                            (loc.name() != null ? loc.name() : "(unnamed)") + ChatColor.GRAY + " @ " +
+                            formatText(loc.name(), "(unnamed)") + ChatColor.GRAY + " @ " +
                             ChatColor.WHITE + loc.x() + ", " + loc.y() + ", " + loc.z() +
                             ChatColor.GRAY + " [" + (loc.world() != null ? loc.world() : "unknown") + "]");
                 }
@@ -199,7 +200,7 @@ public class DistrictsDebugCommand implements CommandExecutor {
                     sender.sendMessage(ChatColor.GRAY + "  Streets (" + district.streets().size() + "):");
                     for (DistrictDetail.Street street : district.streets()) {
                         sender.sendMessage(ChatColor.GRAY + "    - " + ChatColor.WHITE + 
-                                (street.name() != null ? street.name() : "<unnamed>"));
+                                formatText(street.name(), "<unnamed>"));
                     }
                 }
                 
@@ -207,7 +208,7 @@ public class DistrictsDebugCommand implements CommandExecutor {
                     sender.sendMessage(ChatColor.GRAY + "  Structures (" + district.structures().size() + "):");
                     for (DistrictDetail.Structure structure : district.structures()) {
                         sender.sendMessage(ChatColor.GRAY + "    - " + ChatColor.WHITE + 
-                                (structure.name() != null ? structure.name() : "<unnamed>") +
+                                formatText(structure.name(), "<unnamed>") +
                                 (structure.houseNumber() != null ? " #" + structure.houseNumber() : ""));
                     }
                 }
@@ -248,5 +249,10 @@ public class DistrictsDebugCommand implements CommandExecutor {
             });
             return null;
         });
+    }
+
+    private String formatText(String value, String fallback) {
+        String raw = (value == null || value.isBlank()) ? fallback : value;
+        return DisplayTextFormatter.translateToLegacy(raw);
     }
 }

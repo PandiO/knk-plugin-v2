@@ -135,6 +135,36 @@ public class DataAccessFactory {
         DataAccessSettings settings = buildSettings(entitySettings.enchantments(), "EnchantmentDefinitions");
         return new EnchantmentDefinitionsDataAccess(ttl, enchantmentDefinitionsQueryApi, settings);
     }
+
+    /**
+     * Create an ItemBlueprintsDataAccess gateway with configured settings.
+     *
+     * @param ttl Cache TTL duration
+     * @param itemBlueprintsQueryApi ItemBlueprints query API port
+     * @return Configured ItemBlueprintsDataAccess instance
+     */
+    public ItemBlueprintsDataAccess createItemBlueprintsDataAccess(
+        Duration ttl,
+        ItemBlueprintsQueryApi itemBlueprintsQueryApi
+    ) {
+        DataAccessSettings settings = buildSettings(entitySettings.itemBlueprints(), "ItemBlueprints");
+        return new ItemBlueprintsDataAccess(ttl, itemBlueprintsQueryApi, settings);
+    }
+
+    /**
+     * Create a MinecraftMaterialRefsDataAccess gateway with configured settings.
+     *
+     * @param ttl Cache TTL duration
+     * @param minecraftMaterialRefsQueryApi MinecraftMaterialRefs query API port
+     * @return Configured MinecraftMaterialRefsDataAccess instance
+     */
+    public MinecraftMaterialRefsDataAccess createMinecraftMaterialRefsDataAccess(
+        Duration ttl,
+        MinecraftMaterialRefsQueryApi minecraftMaterialRefsQueryApi
+    ) {
+        DataAccessSettings settings = buildSettings(entitySettings.minecraftMaterials(), "MinecraftMaterialRefs");
+        return new MinecraftMaterialRefsDataAccess(ttl, minecraftMaterialRefsQueryApi, settings);
+    }
     
     /**
      * Create a DomainsDataAccess gateway with configured settings.

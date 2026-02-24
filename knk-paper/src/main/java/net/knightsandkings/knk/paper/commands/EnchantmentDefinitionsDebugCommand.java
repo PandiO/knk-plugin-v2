@@ -7,6 +7,7 @@ import net.knightsandkings.knk.core.domain.common.PagedQuery;
 import net.knightsandkings.knk.core.domain.enchantments.KnkEnchantmentDefinition;
 import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.paper.mapper.EnchantmentDefinitionBukkitMapper;
+import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.NamespacedKey;
@@ -344,10 +345,11 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
             String namespace = definition.baseEnchantmentNamespaceKey() != null
                     ? definition.baseEnchantmentNamespaceKey()
                     : "-";
+            String displayName = formatText(definition.displayName(), "-");
 
             sender.sendMessage(ChatColor.GRAY + "  [" + ChatColor.AQUA + definition.id() + ChatColor.GRAY + "] " +
                     ChatColor.WHITE + safe(definition.key()) + ChatColor.GRAY + " | " +
-                    ChatColor.WHITE + safe(definition.displayName()) + ChatColor.GRAY +
+                ChatColor.WHITE + displayName + ChatColor.GRAY +
                     " | maxLevel=" + (definition.maxLevel() != null ? definition.maxLevel() : 1) +
                     " | base=" + namespace);
         }
@@ -421,5 +423,10 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
 
     private String safe(String value) {
         return value != null ? value : "-";
+    }
+
+    private String formatText(String value, String fallback) {
+        String raw = (value == null || value.isBlank()) ? fallback : value;
+        return DisplayTextFormatter.translateToLegacy(raw);
     }
 }
