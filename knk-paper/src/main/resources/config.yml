@@ -141,6 +141,22 @@ cache:
       allow-stale: true
       retry-attempts: 3
       retry-backoff-ms: 100
+
+    itemBlueprints:
+      ttl-minutes: 20
+      max-ttl-minutes: 120
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+
+    minecraftMaterials:
+      ttl-minutes: 60
+      max-ttl-minutes: 480
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
     
     domains:
       ttl-minutes: 30

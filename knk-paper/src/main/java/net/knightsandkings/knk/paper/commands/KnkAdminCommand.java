@@ -1,6 +1,8 @@
 package net.knightsandkings.knk.paper.commands;
 
 import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.ItemBlueprintsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.MinecraftMaterialRefsDataAccess;
 import net.knightsandkings.knk.core.domain.common.Page;
 import net.knightsandkings.knk.core.domain.enchantments.KnkEnchantmentDefinition;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
@@ -39,6 +41,8 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
     private final HelpSubcommand helpSubcommand;
         private final Plugin plugin;
         private final EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess;
+        private final ItemBlueprintsDataAccess itemBlueprintsDataAccess;
+        private final MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess;
 
         private volatile List<String> cachedKnkEnchantmentIds = List.of();
         private volatile List<String> cachedVanillaEnchantmentTokens = List.of();
@@ -54,6 +58,8 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
             TownsQueryApi townsApi, 
             LocationsQueryApi locationsApi, 
             EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess,
+            ItemBlueprintsDataAccess itemBlueprintsDataAccess,
+            MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess,
             DistrictsQueryApi districtsApi, 
             StreetsQueryApi streetsApi, 
             CacheManager cacheManager,
@@ -63,6 +69,8 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
     ) {
                 this.plugin = plugin;
                 this.enchantmentDefinitionsDataAccess = enchantmentDefinitionsDataAccess;
+                this.itemBlueprintsDataAccess = itemBlueprintsDataAccess;
+                this.minecraftMaterialRefsDataAccess = minecraftMaterialRefsDataAccess;
         this.helpSubcommand = new HelpSubcommand(registry);
         
         // Register health
@@ -167,6 +175,30 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                 ),
                 (sender, args) -> enchantmentsCommand.onCommand(sender, null, "knk", args),
                 "enchantment"
+        );
+
+        ItemBlueprintsDebugCommand itemBlueprintsCommand = new ItemBlueprintsDebugCommand(
+                plugin,
+                itemBlueprintsDataAccess,
+                minecraftMaterialRefsDataAccess,
+                enchantmentDefinitionsDataAccess
+        );
+        registry.register(
+                new CommandMetadata(
+                        "itemblueprints",
+                        "List/search item blueprints and give generated items",
+                        "/knk itemblueprints list [page] [size] | /knk itemblueprints search <id|name|displayName> <value> [page] [size] | /knk itemblueprints give <id> [player]",
+                        "knk.admin",
+                        List.of(
+                                "/knk itemblueprints list 1 10",
+                                "/knk itemblueprints search name Sword",
+                                "/knk itemblueprints search displayName Excalibur",
+                                "/knk itemblueprints give 1",
+                                "/knk itemblueprints give 1 SomePlayer"
+                        )
+                ),
+                (sender, args) -> itemBlueprintsCommand.onCommand(sender, null, "knk", args),
+                "itemblueprint"
         );
         
         // Register streets

@@ -6,6 +6,7 @@ import net.knightsandkings.knk.core.domain.towns.TownDetail;
 import net.knightsandkings.knk.core.domain.towns.TownSummary;
 import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
+import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -85,8 +86,8 @@ public class TownsDebugCommand implements CommandExecutor {
                 sender.sendMessage(ChatColor.GREEN + "Towns (" + result.items().size() + " of " + result.totalCount() + "):");
                 
                 for (TownSummary town : result.items()) {
-                    String name = town.name() != null ? town.name() : "<unnamed>";
-                    String desc = town.description() != null ? town.description() : "(no description)";
+                    String name = formatText(town.name(), "<unnamed>");
+                    String desc = formatText(town.description(), "(no description)");
                     String region = town.wgRegionId() != null ? town.wgRegionId() : "-";
                     
                     sender.sendMessage(ChatColor.GRAY + "  [" + ChatColor.AQUA + town.id() + ChatColor.GRAY + "] " +
@@ -164,9 +165,9 @@ public class TownsDebugCommand implements CommandExecutor {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 sender.sendMessage(ChatColor.GREEN + "Town Details:");
                 sender.sendMessage(ChatColor.GRAY + "  ID: " + ChatColor.AQUA + town.id());
-                sender.sendMessage(ChatColor.GRAY + "  Name: " + ChatColor.WHITE + (town.name() != null ? town.name() : "<unnamed>"));
+                sender.sendMessage(ChatColor.GRAY + "  Name: " + ChatColor.WHITE + formatText(town.name(), "<unnamed>"));
                 sender.sendMessage(ChatColor.GRAY + "  Description: " + ChatColor.WHITE + 
-                        (town.description() != null ? town.description() : "(none)"));
+                    formatText(town.description(), "(none)"));
                 
                 if (town.createdAt() != null) {
                     sender.sendMessage(ChatColor.GRAY + "  Created: " + ChatColor.WHITE + town.createdAt());
@@ -182,7 +183,7 @@ public class TownsDebugCommand implements CommandExecutor {
                 if (town.location() != null) {
                     TownDetail.Location loc = town.location();
                     sender.sendMessage(ChatColor.GRAY + "  Location: " + ChatColor.AQUA + 
-                            (loc.name() != null ? loc.name() : "(unnamed)") + ChatColor.GRAY + " @ " +
+                            formatText(loc.name(), "(unnamed)") + ChatColor.GRAY + " @ " +
                             ChatColor.WHITE + loc.x() + ", " + loc.y() + ", " + loc.z() +
                             ChatColor.GRAY + " [" + (loc.world() != null ? loc.world() : "unknown") + "]");
                 }
@@ -191,7 +192,7 @@ public class TownsDebugCommand implements CommandExecutor {
                     sender.sendMessage(ChatColor.GRAY + "  Streets (" + town.streets().size() + "):");
                     for (TownDetail.TownStreet street : town.streets()) {
                         sender.sendMessage(ChatColor.GRAY + "    - " + ChatColor.WHITE + 
-                                (street.name() != null ? street.name() : "<unnamed>"));
+                                formatText(street.name(), "<unnamed>"));
                     }
                 }
                 
@@ -199,7 +200,7 @@ public class TownsDebugCommand implements CommandExecutor {
                     sender.sendMessage(ChatColor.GRAY + "  Districts (" + town.districts().size() + "):");
                     for (TownDetail.TownDistrict district : town.districts()) {
                         sender.sendMessage(ChatColor.GRAY + "    - " + ChatColor.WHITE + 
-                                (district.name() != null ? district.name() : "<unnamed>") + ChatColor.GRAY + 
+                                formatText(district.name(), "<unnamed>") + ChatColor.GRAY + 
                                 " [" + ChatColor.AQUA + district.wgRegionId() + ChatColor.GRAY + "]");
                     }
                 }
@@ -240,5 +241,10 @@ public class TownsDebugCommand implements CommandExecutor {
             });
             return null;
         });
+    }
+
+    private String formatText(String value, String fallback) {
+        String raw = (value == null || value.isBlank()) ? fallback : value;
+        return DisplayTextFormatter.translateToLegacy(raw);
     }
 }

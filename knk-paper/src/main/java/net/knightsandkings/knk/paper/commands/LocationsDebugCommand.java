@@ -5,6 +5,7 @@ import net.knightsandkings.knk.core.domain.common.PagedQuery;
 import net.knightsandkings.knk.core.domain.location.KnkLocation;
 import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -78,7 +79,7 @@ public class LocationsDebugCommand implements CommandExecutor {
         }
         sender.sendMessage(ChatColor.GREEN + "Location:");
         sender.sendMessage(ChatColor.GRAY + " id=" + loc.id());
-        sender.sendMessage(ChatColor.GRAY + " name=" + loc.name());
+        sender.sendMessage(ChatColor.GRAY + " name=" + formatText(loc.name(), "-"));
         sender.sendMessage(ChatColor.GRAY + " world=" + loc.world());
         sender.sendMessage(ChatColor.GRAY + " x=" + loc.x() + ", y=" + loc.y() + ", z=" + loc.z());
         sender.sendMessage(ChatColor.GRAY + " yaw=" + loc.yaw() + ", pitch=" + loc.pitch());
@@ -103,5 +104,10 @@ public class LocationsDebugCommand implements CommandExecutor {
 
     private int parseInt(String s, int def) {
         try { return Integer.parseInt(s); } catch (Exception e) { return def; }
+    }
+
+    private String formatText(String value, String fallback) {
+        String raw = (value == null || value.isBlank()) ? fallback : value;
+        return DisplayTextFormatter.translateToLegacy(raw);
     }
 }
