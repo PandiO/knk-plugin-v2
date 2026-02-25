@@ -44,6 +44,7 @@ import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
 import net.knightsandkings.knk.paper.commands.AccountCommandRegistry;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
+import net.knightsandkings.knk.paper.commands.enchantment.EnchantmentCommandHandler;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
@@ -98,6 +99,9 @@ public class KnKPlugin extends JavaPlugin {
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
     private CommandCooldownManager cooldownManager;
+    private EnchantmentRepository enchantmentRepository;
+    private CooldownManager enchantmentCooldownManager;
+    private EnchantmentCommandHandler enchantmentCommandHandler;
     private ExecutorService regionLookupExecutor;
     private TempRegionRetentionTask tempRegionRetentionTask;
     
@@ -422,6 +426,19 @@ public class KnKPlugin extends JavaPlugin {
         } else {
             getLogger().warning("Failed to register /account command - not defined in plugin.yml?");
         }
+
+        PluginCommand enchantmentCommand = getCommand("ce");
+        if (enchantmentCommand != null) {
+            if (enchantmentCommandHandler == null) {
+                getLogger().warning("Failed to register /ce command - enchantment command handler not initialized");
+            } else {
+                enchantmentCommand.setExecutor(enchantmentCommandHandler);
+                enchantmentCommand.setTabCompleter(enchantmentCommandHandler);
+                getLogger().info("Registered /ce custom enchantments command");
+            }
+        } else {
+            getLogger().warning("Failed to register /ce command - not defined in plugin.yml?");
+        }
     }
     
     public UsersCommandApi getUsersCommandApi() {
@@ -449,10 +466,11 @@ public class KnKPlugin extends JavaPlugin {
     }
 
     private void registerEnchantmentListeners() {
-        EnchantmentRepository enchantmentRepository = new LocalEnchantmentRepositoryImpl();
-        CooldownManager enchantmentCooldownManager = new InMemoryCooldownManager();
+        this.enchantmentRepository = new LocalEnchantmentRepositoryImpl();
+        this.enchantmentCooldownManager = new InMemoryCooldownManager();
         FrozenPlayerTracker frozenPlayerTracker = new FrozenPlayerTracker(this);
         EnchantmentExecutor enchantmentExecutor = new ExecutorImpl(this, enchantmentCooldownManager, frozenPlayerTracker);
+        this.enchantmentCommandHandler = new EnchantmentCommandHandler(this, enchantmentRepository, enchantmentCooldownManager);
 
         boolean disableForCreative = getConfig().getBoolean("custom-enchantments.disable-for-creative", false);
         String cooldownMessageTemplate = getConfig().getString(
