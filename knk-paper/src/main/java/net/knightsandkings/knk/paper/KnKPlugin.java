@@ -12,8 +12,12 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
+import net.knightsandkings.knk.api.impl.enchantment.LocalEnchantmentRepositoryImpl;
 import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
+import net.knightsandkings.knk.core.ports.enchantment.CooldownManager;
+import net.knightsandkings.knk.core.ports.enchantment.EnchantmentExecutor;
+import net.knightsandkings.knk.core.ports.enchantment.EnchantmentRepository;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -43,9 +47,15 @@ import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
+import net.knightsandkings.knk.paper.enchantment.ExecutorImpl;
+import net.knightsandkings.knk.paper.enchantment.FrozenPlayerTracker;
+import net.knightsandkings.knk.paper.enchantment.InMemoryCooldownManager;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
+import net.knightsandkings.knk.paper.listeners.EnchantmentCombatListener;
+import net.knightsandkings.knk.paper.listeners.EnchantmentEnchantTableListener;
+import net.knightsandkings.knk.paper.listeners.FreezeMovementListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
@@ -76,6 +86,7 @@ public class KnKPlugin extends JavaPlugin {
     private DomainsQueryApi domainsQueryApi;
     private UsersQueryApi usersQueryApi;
     private UsersCommandApi usersCommandApi;
+    private UserAccountApi userAccountApi;
     private UsersDataAccess usersDataAccess;
     private TownsDataAccess townsDataAccess;
     private EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess;
@@ -237,6 +248,9 @@ public class KnKPlugin extends JavaPlugin {
             );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
             getLogger().info("Data access factory initialized with entity-specific settings");
+
+            registerEnchantmentListeners();
+            getLogger().info("Registered Phase 3 custom enchantment listeners");
 
             // Register commands
             registerCommands();
@@ -431,6 +445,22 @@ public class KnKPlugin extends JavaPlugin {
 
     public WorldTasksApi getWorldTasksApi() {
         return worldTasksApi;
+    }
+
+    private void registerEnchantmentListeners() {
+        EnchantmentRepository enchantmentRepository = new LocalEnchantmentRepositoryImpl();
+        CooldownManager enchantmentCooldownManager = new InMemoryCooldownManager();
+        FrozenPlayerTracker frozenPlayerTracker = new FrozenPlayerTracker(this);
+        EnchantmentExecutor enchantmentExecutor = new ExecutorImpl(this, enchantmentCooldownManager, frozenPlayerTracker);
+
+        boolean disableForCreative = getConfig().getBoolean("custom-enchantments.disable-for-creative", false);
+        var pluginManager = getServer().getPluginManager();
+        pluginManager.registerEvents(
+                new EnchantmentCombatListener(enchantmentRepository, enchantmentExecutor, disableForCreative),
+                this
+        );
+        pluginManager.registerEvents(new EnchantmentEnchantTableListener(enchantmentRepository), this);
+        pluginManager.registerEvents(new FreezeMovementListener(frozenPlayerTracker), this);
     }
 
     private AuthProvider createAuthProvider(KnkConfig.AuthConfig authConfig) {
