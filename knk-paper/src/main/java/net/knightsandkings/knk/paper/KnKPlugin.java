@@ -55,6 +55,7 @@ import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
 import net.knightsandkings.knk.paper.listeners.EnchantmentCombatListener;
 import net.knightsandkings.knk.paper.listeners.EnchantmentEnchantTableListener;
+import net.knightsandkings.knk.paper.listeners.EnchantmentInteractListener;
 import net.knightsandkings.knk.paper.listeners.FreezeMovementListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
@@ -454,10 +455,24 @@ public class KnKPlugin extends JavaPlugin {
         EnchantmentExecutor enchantmentExecutor = new ExecutorImpl(this, enchantmentCooldownManager, frozenPlayerTracker);
 
         boolean disableForCreative = getConfig().getBoolean("custom-enchantments.disable-for-creative", false);
+        String cooldownMessageTemplate = getConfig().getString(
+            "custom-enchantments.cooldown-message",
+            "&c%seconds% seconds remaining"
+        );
         var pluginManager = getServer().getPluginManager();
         pluginManager.registerEvents(
                 new EnchantmentCombatListener(enchantmentRepository, enchantmentExecutor, disableForCreative),
                 this
+        );
+        pluginManager.registerEvents(
+            new EnchantmentInteractListener(
+                enchantmentRepository,
+                enchantmentExecutor,
+                enchantmentCooldownManager,
+                disableForCreative,
+                cooldownMessageTemplate
+            ),
+            this
         );
         pluginManager.registerEvents(new EnchantmentEnchantTableListener(enchantmentRepository), this);
         pluginManager.registerEvents(new FreezeMovementListener(frozenPlayerTracker), this);

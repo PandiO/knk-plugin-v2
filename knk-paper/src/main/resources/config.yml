@@ -77,6 +77,11 @@ messages:
   # Merge complete
   merge-complete: "&aAccount merge complete. Your account now has {coins} coins, {gems} gems, and {exp} XP."
 
+# Custom enchantments runtime settings
+custom-enchantments:
+  disable-for-creative: false
+  cooldown-message: "&c%seconds% seconds remaining"
+
 # Cache configuration
 cache:
   # Global time-to-live for cached API responses (in seconds)
