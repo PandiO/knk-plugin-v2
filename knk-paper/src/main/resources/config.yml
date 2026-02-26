@@ -77,6 +77,34 @@ messages:
   # Merge complete
   merge-complete: "&aAccount merge complete. Your account now has {coins} coins, {gems} gems, and {exp} XP."
 
+# Custom enchantments runtime settings
+custom-enchantments:
+  disable-for-creative: false
+  cooldown-message: "&c%seconds% seconds remaining"
+  messages:
+    cmd-help-header: "&6Custom Enchantments Commands:"
+    cmd-unknown: "&cUnknown subcommand."
+    cmd-no-permission: "&cYou don't have permission to use this command."
+    cmd-player-only: "&cThis command can only be executed by players."
+    cmd-hand: "&cPlease put an item in your hand and run the command."
+    cmd-hand-target: "&cTarget player must hold an item in main hand."
+    cmd-invalid-level: "&cLevel must be a positive number."
+    cmd-usage-add: "&eUsage: /ce add <enchantment> <level>"
+    cmd-usage-remove: "&eUsage: /ce remove <enchantment>"
+    cmd-usage-info: "&eUsage: /ce info [player]"
+    cmd-usage-cooldown: "&eUsage: /ce cooldown clear [player]"
+    cmd-unknown-enchantment: "&cUnknown enchantment: %enchantment%"
+    cmd-add-success: "&aEnchantment was added to item successfully."
+    cmd-add-level: "&cCannot add %enchantment%, max level is %lvl%."
+    cmd-remove-success: "&aEnchantment was removed from item successfully."
+    cmd-player-not-found: "&cCould not find player %player%."
+    cmd-clear: "&aRemoved cooldowns for %player%."
+    cmd-reload: "&aPlugin configuration was reloaded."
+    cmd-info-header: "&6Custom enchantments on held item:"
+    cmd-info-line: "&7- &f%name% %level% &8(id: %id%) &7cooldown: %cooldown%s"
+    cmd-info-none: "&7No custom enchantments found on held item."
+    ench-use: "&cYou cannot use %enchantment%."
+
 # Cache configuration
 cache:
   # Global time-to-live for cached API responses (in seconds)
@@ -129,6 +157,30 @@ cache:
     locations:
       ttl-minutes: 20
       max-ttl-minutes: 120
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+
+    enchantments:
+      ttl-minutes: 20
+      max-ttl-minutes: 120
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+
+    itemBlueprints:
+      ttl-minutes: 20
+      max-ttl-minutes: 120
+      default-policy: CACHE_FIRST
+      allow-stale: true
+      retry-attempts: 3
+      retry-backoff-ms: 100
+
+    minecraftMaterials:
+      ttl-minutes: 60
+      max-ttl-minutes: 480
       default-policy: CACHE_FIRST
       allow-stale: true
       retry-attempts: 3

@@ -17,7 +17,15 @@ import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.core.ports.api.EnchantmentDefinitionsQueryApi;
+import net.knightsandkings.knk.core.ports.api.ItemBlueprintsQueryApi;
+import net.knightsandkings.knk.core.ports.api.MinecraftMaterialRefsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
+import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
+import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.ItemBlueprintsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.MinecraftMaterialRefsDataAccess;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
@@ -30,6 +38,7 @@ import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
+import net.knightsandkings.knk.paper.bootstrap.EnchantmentBootstrap;
 import net.knightsandkings.knk.paper.commands.AccountCommandRegistry;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
@@ -59,20 +68,27 @@ public class KnKPlugin extends JavaPlugin {
     private DataAccessFactory dataAccessFactory;
     private TownsQueryApi townsQueryApi;
     private LocationsQueryApi locationsQueryApi;
+    private EnchantmentDefinitionsQueryApi enchantmentDefinitionsQueryApi;
+    private ItemBlueprintsQueryApi itemBlueprintsQueryApi;
+    private MinecraftMaterialRefsQueryApi minecraftMaterialRefsQueryApi;
     private DistrictsQueryApi districtsQueryApi;
     private StreetsQueryApi streetsQueryApi;
     private StructuresQueryApi structuresQueryApi;
     private DomainsQueryApi domainsQueryApi;
     private UsersQueryApi usersQueryApi;
     private UsersCommandApi usersCommandApi;
+    private UserAccountApi userAccountApi;
     private UsersDataAccess usersDataAccess;
     private TownsDataAccess townsDataAccess;
-    private UserAccountApi userAccountApi;
+    private EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess;
+    private ItemBlueprintsDataAccess itemBlueprintsDataAccess;
+    private MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess;
     private WorldTasksApi worldTasksApi;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
     private CommandCooldownManager cooldownManager;
+    private EnchantmentBootstrap.EnchantmentRuntime enchantmentRuntime;
     private ExecutorService regionLookupExecutor;
     private TempRegionRetentionTask tempRegionRetentionTask;
     
@@ -107,6 +123,9 @@ public class KnKPlugin extends JavaPlugin {
             // Wire TownsQueryApi from client
             this.townsQueryApi = apiClient.getTownsQueryApi();
             this.locationsQueryApi = apiClient.getLocationsQueryApi();
+            this.enchantmentDefinitionsQueryApi = apiClient.getEnchantmentDefinitionsQueryApi();
+            this.itemBlueprintsQueryApi = apiClient.getItemBlueprintsQueryApi();
+            this.minecraftMaterialRefsQueryApi = apiClient.getMinecraftMaterialRefsQueryApi();
             this.districtsQueryApi = apiClient.getDistrictsQueryApi();
             this.streetsQueryApi = apiClient.getStreetsQueryApi();
             this.structuresQueryApi = apiClient.getStructuresQueryApi();
@@ -117,6 +136,9 @@ public class KnKPlugin extends JavaPlugin {
             this.worldTasksApi = apiClient.getWorldTasksApi();
             getLogger().info("TownsQueryApi wired from API client");
             getLogger().info("LocationsQueryApi wired from API client");
+            getLogger().info("EnchantmentDefinitionsQueryApi wired from API client");
+            getLogger().info("ItemBlueprintsQueryApi wired from API client");
+            getLogger().info("MinecraftMaterialRefsQueryApi wired from API client");
             getLogger().info("DistrictsQueryApi wired from API client");
             getLogger().info("StreetsQueryApi wired from API client");
             getLogger().info("StructuresQueryApi wired from API client");
@@ -204,18 +226,23 @@ public class KnKPlugin extends JavaPlugin {
                 cacheManager.getTownCache(),
                 townsQueryApi
             );
-            this.dataAccessFactory = new DataAccessFactory(config.cache().entities());
-            this.usersDataAccess = dataAccessFactory.createUsersDataAccess(
-                cacheManager.getUserCache(),
-                usersQueryApi,
-                usersCommandApi
+            this.enchantmentDefinitionsDataAccess = dataAccessFactory.createEnchantmentDefinitionsDataAccess(
+                config.cache().ttl(),
+                enchantmentDefinitionsQueryApi
             );
-            this.townsDataAccess = dataAccessFactory.createTownsDataAccess(
-                cacheManager.getTownCache(),
-                townsQueryApi
+            this.itemBlueprintsDataAccess = dataAccessFactory.createItemBlueprintsDataAccess(
+                config.cache().ttl(),
+                itemBlueprintsQueryApi
+            );
+            this.minecraftMaterialRefsDataAccess = dataAccessFactory.createMinecraftMaterialRefsDataAccess(
+                config.cache().ttl(),
+                minecraftMaterialRefsQueryApi
             );
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
             getLogger().info("Data access factory initialized with entity-specific settings");
+
+            initializeEnchantmentRuntime();
+            getLogger().info("Registered custom enchantment runtime listeners and /ce command");
 
             // Register commands
             registerCommands();
@@ -350,18 +377,23 @@ public class KnKPlugin extends JavaPlugin {
         if (knkCommand != null) {
             // Use "localhost" as default serverId; TODO: make this configurable
             String serverId = "localhost";
-            knkCommand.setExecutor(new KnkAdminCommand(
+            KnkAdminCommand knkAdminCommand = new KnkAdminCommand(
                 this, 
                 apiClient.getHealthApi(), 
                 townsQueryApi, 
                 locationsQueryApi, 
+                enchantmentDefinitionsDataAccess,
+                itemBlueprintsDataAccess,
+                minecraftMaterialRefsDataAccess,
                 districtsQueryApi, 
                 streetsQueryApi, 
                 cacheManager,
                 worldTasksApi,
                 worldTaskHandlerRegistry,
                 serverId
-            ));
+            );
+            knkCommand.setExecutor(knkAdminCommand);
+            knkCommand.setTabCompleter(knkAdminCommand);
             getLogger().info("Registered /knk admin command");
         } else {
             getLogger().warning("Failed to register /knk command - not defined in plugin.yml?");
@@ -381,6 +413,7 @@ public class KnKPlugin extends JavaPlugin {
         } else {
             getLogger().warning("Failed to register /account command - not defined in plugin.yml?");
         }
+
     }
     
     public UsersCommandApi getUsersCommandApi() {
@@ -405,6 +438,11 @@ public class KnKPlugin extends JavaPlugin {
 
     public WorldTasksApi getWorldTasksApi() {
         return worldTasksApi;
+    }
+
+    private void initializeEnchantmentRuntime() {
+        EnchantmentBootstrap bootstrap = new EnchantmentBootstrap(this);
+        this.enchantmentRuntime = bootstrap.initialize();
     }
 
     private AuthProvider createAuthProvider(KnkConfig.AuthConfig authConfig) {

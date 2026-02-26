@@ -123,6 +123,9 @@ public record KnkConfig(
         EntitySettings structures,
         EntitySettings streets,
         EntitySettings locations,
+        EntitySettings enchantments,
+        EntitySettings itemBlueprints,
+        EntitySettings minecraftMaterials,
         EntitySettings domains,
         EntitySettings health
     ) {
@@ -134,6 +137,9 @@ public record KnkConfig(
                 EntitySettings.defaults(), // structures
                 EntitySettings.defaults(), // streets
                 EntitySettings.defaults(), // locations
+                EntitySettings.defaults(), // enchantments
+                EntitySettings.defaults(), // itemBlueprints
+                EntitySettings.defaults(), // minecraftMaterials
                 EntitySettings.defaults(), // domains
                 EntitySettings.defaults()  // health
             );

@@ -19,6 +19,12 @@ commands:
     usage: "/account [create|link|status]"
     aliases: [acc]
     permission: knk.account.use
+
+  ce:
+    description: "Manage custom enchantments on held item"
+    usage: "/ce <add|remove|info|cooldown|reload>"
+    aliases: [customench]
+    permission: customenchantments.command.use
     
 permissions:
   knk.admin:
@@ -40,4 +46,36 @@ permissions:
 
   knk.account.admin:
     description: Admin account management (future view/modify other players' accounts)
+    default: op
+
+  customenchantments.command.use:
+    description: Allows use of /ce root command
+    default: true
+
+  customenchantments.command.add:
+    description: Allows adding custom enchantments with /ce add
+    default: op
+
+  customenchantments.command.remove:
+    description: Allows removing custom enchantments with /ce remove
+    default: op
+
+  customenchantments.command.info:
+    description: Allows viewing custom enchantments with /ce info
+    default: true
+
+  customenchantments.command.info.others:
+    description: Allows viewing other players' item enchantments with /ce info <player>
+    default: op
+
+  customenchantments.command.cooldown.clear:
+    description: Allows clearing your own enchantment cooldowns
+    default: op
+
+  customenchantments.command.cooldown.clear.others:
+    description: Allows clearing other players' enchantment cooldowns
+    default: op
+
+  customenchantments.command.reload:
+    description: Allows reloading custom enchantment config with /ce reload
     default: op

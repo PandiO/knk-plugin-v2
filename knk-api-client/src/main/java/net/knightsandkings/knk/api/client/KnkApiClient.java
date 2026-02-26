@@ -8,6 +8,9 @@ import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.impl.HealthApiImpl;
 import net.knightsandkings.knk.api.impl.TownsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.LocationsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.EnchantmentDefinitionsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.ItemBlueprintsQueryApiImpl;
+import net.knightsandkings.knk.api.impl.MinecraftMaterialRefsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.DistrictsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.StreetsQueryApiImpl;
 import net.knightsandkings.knk.api.impl.StructuresQueryApiImpl;
@@ -21,6 +24,9 @@ import net.knightsandkings.knk.api.impl.RegionsCommandApiImpl;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
+import net.knightsandkings.knk.core.ports.api.EnchantmentDefinitionsQueryApi;
+import net.knightsandkings.knk.core.ports.api.ItemBlueprintsQueryApi;
+import net.knightsandkings.knk.core.ports.api.MinecraftMaterialRefsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StructuresQueryApi;
@@ -54,6 +60,9 @@ public class KnkApiClient {
     private final HealthApi healthApi;
     private final TownsQueryApi townsQueryApi;
     private final LocationsQueryApi locationsQueryApi;
+    private final EnchantmentDefinitionsQueryApi enchantmentDefinitionsQueryApi;
+    private final ItemBlueprintsQueryApi itemBlueprintsQueryApi;
+    private final MinecraftMaterialRefsQueryApi minecraftMaterialRefsQueryApi;
     private final DistrictsQueryApi districtsQueryApi;
     private final StreetsQueryApi streetsQueryApi;
     private final StructuresQueryApi structuresQueryApi;
@@ -82,6 +91,9 @@ public class KnkApiClient {
         this.healthApi = new HealthApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.townsQueryApi = new TownsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.locationsQueryApi = new LocationsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.enchantmentDefinitionsQueryApi = new EnchantmentDefinitionsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.itemBlueprintsQueryApi = new ItemBlueprintsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.minecraftMaterialRefsQueryApi = new MinecraftMaterialRefsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.districtsQueryApi = new DistrictsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.streetsQueryApi = new StreetsQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.structuresQueryApi = new StructuresQueryApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
@@ -103,6 +115,18 @@ public class KnkApiClient {
     
     public LocationsQueryApi getLocationsQueryApi() { 
         return locationsQueryApi; 
+    }
+
+    public EnchantmentDefinitionsQueryApi getEnchantmentDefinitionsQueryApi() {
+        return enchantmentDefinitionsQueryApi;
+    }
+
+    public ItemBlueprintsQueryApi getItemBlueprintsQueryApi() {
+        return itemBlueprintsQueryApi;
+    }
+
+    public MinecraftMaterialRefsQueryApi getMinecraftMaterialRefsQueryApi() {
+        return minecraftMaterialRefsQueryApi;
     }
     
     public DistrictsQueryApi getDistrictsQueryApi() {

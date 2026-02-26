@@ -1,5 +1,10 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.ItemBlueprintsDataAccess;
+import net.knightsandkings.knk.core.dataaccess.MinecraftMaterialRefsDataAccess;
+import net.knightsandkings.knk.core.domain.common.Page;
+import net.knightsandkings.knk.core.domain.enchantments.KnkEnchantmentDefinition;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
 import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
@@ -8,28 +13,53 @@ import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.cache.CacheManager;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Root /knk command dispatcher using CommandRegistry.
  */
-public class KnkAdminCommand implements CommandExecutor {
+public class KnkAdminCommand implements CommandExecutor, TabCompleter {
     private final CommandRegistry registry = new CommandRegistry();
     private final HelpSubcommand helpSubcommand;
+        private final Plugin plugin;
+        private final EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess;
+        private final ItemBlueprintsDataAccess itemBlueprintsDataAccess;
+        private final MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess;
+
+        private volatile List<String> cachedKnkEnchantmentIds = List.of();
+        private volatile List<String> cachedVanillaEnchantmentTokens = List.of();
+        private volatile long lastKnkIdRefreshMillis = 0L;
+        private final AtomicBoolean knkIdRefreshInProgress = new AtomicBoolean(false);
+
+        private static final long KNK_ID_REFRESH_INTERVAL_MS = 30_000L;
+        private static final int KNK_ID_PAGE_SIZE = 100;
 
     public KnkAdminCommand(
             Plugin plugin, 
             HealthApi healthApi, 
             TownsQueryApi townsApi, 
             LocationsQueryApi locationsApi, 
+            EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess,
+            ItemBlueprintsDataAccess itemBlueprintsDataAccess,
+            MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess,
             DistrictsQueryApi districtsApi, 
             StreetsQueryApi streetsApi, 
             CacheManager cacheManager,
@@ -37,6 +67,10 @@ public class KnkAdminCommand implements CommandExecutor {
             WorldTaskHandlerRegistry worldTaskHandlerRegistry,
             String serverId
     ) {
+                this.plugin = plugin;
+                this.enchantmentDefinitionsDataAccess = enchantmentDefinitionsDataAccess;
+                this.itemBlueprintsDataAccess = itemBlueprintsDataAccess;
+                this.minecraftMaterialRefsDataAccess = minecraftMaterialRefsDataAccess;
         this.helpSubcommand = new HelpSubcommand(registry);
         
         // Register health
@@ -122,6 +156,50 @@ public class KnkAdminCommand implements CommandExecutor {
                     return locationHereCommand.onCommand(sender, null, "knk", new String[0]);
                 }
         );
+
+        // Register enchantment definitions
+        EnchantmentDefinitionsDebugCommand enchantmentsCommand = new EnchantmentDefinitionsDebugCommand(plugin, enchantmentDefinitionsDataAccess);
+        registry.register(
+                new CommandMetadata(
+                        "enchantments",
+                        "List/search enchantment definitions and apply to held item",
+                        "/knk enchantments list [page] [size] | /knk enchantments vanilla [page] [size] | /knk enchantments search <id|key|displayName> <value> [page] [size] | /knk enchantments apply <id|vanillaName> [level]",
+                        "knk.admin",
+                        List.of(
+                                "/knk enchantments list 1 10",
+                                "/knk enchantments vanilla 1 10",
+                                "/knk enchantments search key minecraft:sharpness",
+                                "/knk enchantments apply 1 3",
+                                "/knk enchantments apply sharpness 3"
+                        )
+                ),
+                (sender, args) -> enchantmentsCommand.onCommand(sender, null, "knk", args),
+                "enchantment"
+        );
+
+        ItemBlueprintsDebugCommand itemBlueprintsCommand = new ItemBlueprintsDebugCommand(
+                plugin,
+                itemBlueprintsDataAccess,
+                minecraftMaterialRefsDataAccess,
+                enchantmentDefinitionsDataAccess
+        );
+        registry.register(
+                new CommandMetadata(
+                        "itemblueprints",
+                        "List/search item blueprints and give generated items",
+                        "/knk itemblueprints list [page] [size] | /knk itemblueprints search <id|name|displayName> <value> [page] [size] | /knk itemblueprints give <id> [player]",
+                        "knk.admin",
+                        List.of(
+                                "/knk itemblueprints list 1 10",
+                                "/knk itemblueprints search name Sword",
+                                "/knk itemblueprints search displayName Excalibur",
+                                "/knk itemblueprints give 1",
+                                "/knk itemblueprints give 1 SomePlayer"
+                        )
+                ),
+                (sender, args) -> itemBlueprintsCommand.onCommand(sender, null, "knk", args),
+                "itemblueprint"
+        );
         
         // Register streets
         StreetsDebugCommand streetsCommand = new StreetsDebugCommand(plugin, streetsApi);
@@ -171,6 +249,9 @@ public class KnkAdminCommand implements CommandExecutor {
                         List.of("/knk help", "/knk help towns")),
                 (sender, args) -> helpSubcommand.execute(sender, args)
         );
+
+        refreshVanillaEnchantmentTokens();
+        scheduleKnkIdRefresh();
     }
 
     @Override
@@ -201,4 +282,161 @@ public class KnkAdminCommand implements CommandExecutor {
 
         return cmd.executor().execute(sender, subArgs);
     }
+
+        @Override
+        public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+                try {
+                if (args.length == 0) {
+                        return Collections.emptyList();
+                }
+
+                if (args.length == 1) {
+                        List<String> rootCommands = registry.listAvailable(sender).stream()
+                                        .map(c -> c.metadata().name())
+                                        .sorted()
+                                        .toList();
+                        return filterByPrefix(rootCommands, args[0]);
+                }
+
+                String root = args[0].toLowerCase(Locale.ROOT);
+                if (!"enchantments".equals(root) && !"enchantment".equals(root)) {
+                        return Collections.emptyList();
+                }
+
+                if (args.length == 2) {
+                        return filterByPrefix(List.of("list", "vanilla", "search", "apply"), args[1]);
+                }
+
+                String enchantmentsSubcommand = args[1].toLowerCase(Locale.ROOT);
+
+                if ("search".equals(enchantmentsSubcommand) && args.length == 3) {
+                        return filterByPrefix(List.of("id", "key", "displayName"), args[2]);
+                }
+
+                if ("apply".equals(enchantmentsSubcommand)) {
+                        if (args.length == 3) {
+                                refreshKnkIdsIfStale();
+
+                                List<String> suggestions = new ArrayList<>();
+                                suggestions.addAll(cachedKnkEnchantmentIds);
+                                suggestions.addAll(cachedVanillaEnchantmentTokens);
+                                return filterByPrefix(suggestions, args[2]);
+                        }
+
+                        // Suggest common levels when user is likely entering the optional level
+                        if (args.length >= 4) {
+                                String current = args[args.length - 1];
+                                if (current.isBlank() || current.chars().allMatch(Character::isDigit)) {
+                                        return filterByPrefix(List.of("1", "2", "3", "4", "5"), current);
+                                }
+                        }
+                }
+
+                return Collections.emptyList();
+                } catch (Exception ex) {
+                        plugin.getLogger().warning("Tab completion failed for /knk: " + ex.getMessage());
+                        return Collections.emptyList();
+                }
+        }
+
+        private void refreshKnkIdsIfStale() {
+                long now = System.currentTimeMillis();
+                if ((now - lastKnkIdRefreshMillis) < KNK_ID_REFRESH_INTERVAL_MS) {
+                        return;
+                }
+                scheduleKnkIdRefresh();
+        }
+
+        private void scheduleKnkIdRefresh() {
+                if (!knkIdRefreshInProgress.compareAndSet(false, true)) {
+                        return;
+                }
+
+                plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                        try {
+                                List<String> ids = fetchAllKnkIds();
+                                if (!ids.isEmpty()) {
+                                        cachedKnkEnchantmentIds = ids;
+                                }
+                                lastKnkIdRefreshMillis = System.currentTimeMillis();
+                        } catch (Exception ignored) {
+                        } finally {
+                                knkIdRefreshInProgress.set(false);
+                        }
+                });
+        }
+
+        private List<String> fetchAllKnkIds() {
+                List<String> ids = new ArrayList<>();
+                int page = 1;
+
+                while (true) {
+                        CompletableFuture<Page<KnkEnchantmentDefinition>> future = enchantmentDefinitionsDataAccess.listAsync(page, KNK_ID_PAGE_SIZE);
+                        Page<KnkEnchantmentDefinition> result = future.join();
+                        if (result == null || result.items() == null || result.items().isEmpty()) {
+                                break;
+                        }
+
+                        for (KnkEnchantmentDefinition definition : result.items()) {
+                                if (definition != null && definition.id() != null) {
+                                        ids.add(String.valueOf(definition.id()));
+                                }
+                        }
+
+                        int totalPages = result.pageSize() > 0
+                                        ? Math.max(1, (int) Math.ceil((double) result.totalCount() / result.pageSize()))
+                                        : 1;
+                        if (page >= totalPages) {
+                                break;
+                        }
+
+                        page++;
+                }
+
+                return ids.stream().distinct().sorted(Comparator.comparingInt(Integer::parseInt)).toList();
+        }
+
+        private void refreshVanillaEnchantmentTokens() {
+                cachedVanillaEnchantmentTokens = getVanillaEnchantmentTokensInternal();
+        }
+
+        private List<String> getVanillaEnchantmentTokensInternal() {
+                List<String> tokens = new ArrayList<>();
+
+                try {
+                        for (Enchantment enchantment : Registry.ENCHANTMENT) {
+                                collectVanillaToken(tokens, enchantment);
+                        }
+                } catch (Throwable ignored) {
+                        for (Enchantment enchantment : Enchantment.values()) {
+                                collectVanillaToken(tokens, enchantment);
+                        }
+                }
+
+                return tokens.stream().distinct().sorted().toList();
+        }
+
+        private void collectVanillaToken(List<String> tokens, Enchantment enchantment) {
+                if (enchantment == null || enchantment.getKey() == null) {
+                        return;
+                }
+
+                NamespacedKey key = enchantment.getKey();
+                if (!"minecraft".equals(key.getNamespace())) {
+                        return;
+                }
+
+                tokens.add(key.getKey());
+                tokens.add(key.toString());
+                tokens.add(key.getKey().replace('_', '-'));
+        }
+
+        private List<String> filterByPrefix(List<String> values, String rawPrefix) {
+                String prefix = rawPrefix == null ? "" : rawPrefix.toLowerCase(Locale.ROOT);
+                return values.stream()
+                                .filter(v -> v != null && v.toLowerCase(Locale.ROOT).startsWith(prefix))
+                                .distinct()
+                                .sorted()
+                                .toList();
+        }
 }

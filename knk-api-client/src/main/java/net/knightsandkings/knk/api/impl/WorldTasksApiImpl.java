@@ -57,7 +57,9 @@ public class WorldTasksApiImpl extends BaseApiImpl implements WorldTasksApi {
             try {
                 LOGGER.fine("Fetching task by link code: " + linkCode);
                 String responseJson = get(url);
+                LOGGER.fine("Received task data: " + responseJson);
                 return objectMapper.readValue(responseJson, WorldTaskDto.class);
+                //Log the complete response for debugging
             } catch (ApiException e) {
                 if (e.getStatusCode() == 404) {
                     return null;
