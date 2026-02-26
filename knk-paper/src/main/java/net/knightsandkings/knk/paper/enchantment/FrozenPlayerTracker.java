@@ -1,8 +1,11 @@
 package net.knightsandkings.knk.paper.enchantment;
 
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.util.Vector;
 
 import java.util.Map;
 import java.util.UUID;
@@ -12,29 +15,45 @@ public class FrozenPlayerTracker {
     private final Plugin plugin;
     private final Map<UUID, Integer> pendingUnfreezeTasks = new ConcurrentHashMap<>();
     private final Map<UUID, Long> frozenUntilMillis = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> originalAiStates = new ConcurrentHashMap<>();
 
     public FrozenPlayerTracker(Plugin plugin) {
         this.plugin = plugin;
     }
 
-    public void freeze(Player player, int durationTicks) {
-        if (player == null || durationTicks <= 0) {
+    public void freeze(LivingEntity target, int durationTicks) {
+        if (target == null || durationTicks <= 0) {
             return;
         }
 
-        UUID playerId = player.getUniqueId();
-        frozenUntilMillis.put(playerId, System.currentTimeMillis() + (durationTicks * 50L));
+        UUID targetId = target.getUniqueId();
+        frozenUntilMillis.put(targetId, System.currentTimeMillis() + (durationTicks * 50L));
 
-        Integer previousTask = pendingUnfreezeTasks.remove(playerId);
+        Integer previousTask = pendingUnfreezeTasks.remove(targetId);
         if (previousTask != null) {
             Bukkit.getScheduler().cancelTask(previousTask);
         }
 
+        if (!(target instanceof Player)) {
+            try {
+                originalAiStates.put(targetId, target.hasAI());
+                target.setAI(false);
+            } catch (UnsupportedOperationException ignored) {
+                originalAiStates.remove(targetId);
+            }
+            target.setVelocity(new Vector(0.0d, 0.0d, 0.0d));
+        }
+
         int taskId = Bukkit.getScheduler().scheduleSyncDelayedTask(plugin, () -> {
-            frozenUntilMillis.remove(playerId);
-            pendingUnfreezeTasks.remove(playerId);
+            restoreEntityState(targetId);
+            frozenUntilMillis.remove(targetId);
+            pendingUnfreezeTasks.remove(targetId);
         }, durationTicks);
-        pendingUnfreezeTasks.put(playerId, taskId);
+        pendingUnfreezeTasks.put(targetId, taskId);
+    }
+
+    public void freeze(Player player, int durationTicks) {
+        freeze((LivingEntity) player, durationTicks);
     }
 
     public boolean isFrozen(UUID playerId) {
@@ -62,9 +81,26 @@ public class FrozenPlayerTracker {
         }
 
         frozenUntilMillis.remove(playerId);
+        restoreEntityState(playerId);
         Integer taskId = pendingUnfreezeTasks.remove(playerId);
         if (taskId != null) {
             Bukkit.getScheduler().cancelTask(taskId);
+        }
+    }
+
+    private void restoreEntityState(UUID entityId) {
+        Boolean originalAi = originalAiStates.remove(entityId);
+        if (originalAi == null) {
+            return;
+        }
+
+        Entity entity = Bukkit.getEntity(entityId);
+        if (entity instanceof LivingEntity livingEntity && !(livingEntity instanceof Player)) {
+            try {
+                livingEntity.setAI(originalAi);
+            } catch (UnsupportedOperationException ignored) {
+                // No AI support on this entity implementation
+            }
         }
     }
 }
