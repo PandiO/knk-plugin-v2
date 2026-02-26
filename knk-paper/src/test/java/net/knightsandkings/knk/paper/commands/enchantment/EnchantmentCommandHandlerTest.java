@@ -2,6 +2,7 @@ package net.knightsandkings.knk.paper.commands.enchantment;
 
 import net.knightsandkings.knk.core.ports.enchantment.CooldownManager;
 import net.knightsandkings.knk.core.ports.enchantment.EnchantmentRepository;
+import net.knightsandkings.knk.paper.config.EnchantmentConfigManager;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.Plugin;
@@ -44,7 +45,14 @@ class EnchantmentCommandHandlerTest {
                 (proxy, method, args) -> defaultValue(method.getReturnType())
         );
 
-        return new EnchantmentCommandHandler(plugin, new NoOpEnchantmentRepository(), new NoOpCooldownManager());
+        EnchantmentConfigManager configManager = new EnchantmentConfigManager(plugin);
+
+        return new EnchantmentCommandHandler(
+            plugin,
+            configManager,
+            new NoOpEnchantmentRepository(),
+            new NoOpCooldownManager()
+        );
     }
 
     private CommandSender testSender() {

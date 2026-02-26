@@ -12,12 +12,8 @@ import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.BearerAuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.client.KnkApiClient;
-import net.knightsandkings.knk.api.impl.enchantment.LocalEnchantmentRepositoryImpl;
 import net.knightsandkings.knk.core.dataaccess.TownsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.UsersDataAccess;
-import net.knightsandkings.knk.core.ports.enchantment.CooldownManager;
-import net.knightsandkings.knk.core.ports.enchantment.EnchantmentExecutor;
-import net.knightsandkings.knk.core.ports.enchantment.EnchantmentRepository;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DomainsQueryApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -42,22 +38,15 @@ import net.knightsandkings.knk.core.regions.RegionTransitionService;
 import net.knightsandkings.knk.core.regions.SimpleRegionTransitionService;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
+import net.knightsandkings.knk.paper.bootstrap.EnchantmentBootstrap;
 import net.knightsandkings.knk.paper.commands.AccountCommandRegistry;
 import net.knightsandkings.knk.paper.commands.KnkAdminCommand;
-import net.knightsandkings.knk.paper.commands.enchantment.EnchantmentCommandHandler;
 import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
-import net.knightsandkings.knk.paper.enchantment.ExecutorImpl;
-import net.knightsandkings.knk.paper.enchantment.FrozenPlayerTracker;
-import net.knightsandkings.knk.paper.enchantment.InMemoryCooldownManager;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
-import net.knightsandkings.knk.paper.listeners.EnchantmentCombatListener;
-import net.knightsandkings.knk.paper.listeners.EnchantmentEnchantTableListener;
-import net.knightsandkings.knk.paper.listeners.EnchantmentInteractListener;
-import net.knightsandkings.knk.paper.listeners.FreezeMovementListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
@@ -99,9 +88,7 @@ public class KnKPlugin extends JavaPlugin {
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
     private CommandCooldownManager cooldownManager;
-    private EnchantmentRepository enchantmentRepository;
-    private CooldownManager enchantmentCooldownManager;
-    private EnchantmentCommandHandler enchantmentCommandHandler;
+    private EnchantmentBootstrap.EnchantmentRuntime enchantmentRuntime;
     private ExecutorService regionLookupExecutor;
     private TempRegionRetentionTask tempRegionRetentionTask;
     
@@ -254,8 +241,8 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().info("Cache manager initialized with TTL: " + config.cache().ttl());
             getLogger().info("Data access factory initialized with entity-specific settings");
 
-            registerEnchantmentListeners();
-            getLogger().info("Registered Phase 3 custom enchantment listeners");
+            initializeEnchantmentRuntime();
+            getLogger().info("Registered custom enchantment runtime listeners and /ce command");
 
             // Register commands
             registerCommands();
@@ -427,18 +414,6 @@ public class KnKPlugin extends JavaPlugin {
             getLogger().warning("Failed to register /account command - not defined in plugin.yml?");
         }
 
-        PluginCommand enchantmentCommand = getCommand("ce");
-        if (enchantmentCommand != null) {
-            if (enchantmentCommandHandler == null) {
-                getLogger().warning("Failed to register /ce command - enchantment command handler not initialized");
-            } else {
-                enchantmentCommand.setExecutor(enchantmentCommandHandler);
-                enchantmentCommand.setTabCompleter(enchantmentCommandHandler);
-                getLogger().info("Registered /ce custom enchantments command");
-            }
-        } else {
-            getLogger().warning("Failed to register /ce command - not defined in plugin.yml?");
-        }
     }
     
     public UsersCommandApi getUsersCommandApi() {
@@ -465,35 +440,9 @@ public class KnKPlugin extends JavaPlugin {
         return worldTasksApi;
     }
 
-    private void registerEnchantmentListeners() {
-        this.enchantmentRepository = new LocalEnchantmentRepositoryImpl();
-        this.enchantmentCooldownManager = new InMemoryCooldownManager();
-        FrozenPlayerTracker frozenPlayerTracker = new FrozenPlayerTracker(this);
-        EnchantmentExecutor enchantmentExecutor = new ExecutorImpl(this, enchantmentCooldownManager, frozenPlayerTracker);
-        this.enchantmentCommandHandler = new EnchantmentCommandHandler(this, enchantmentRepository, enchantmentCooldownManager);
-
-        boolean disableForCreative = getConfig().getBoolean("custom-enchantments.disable-for-creative", false);
-        String cooldownMessageTemplate = getConfig().getString(
-            "custom-enchantments.cooldown-message",
-            "&c%seconds% seconds remaining"
-        );
-        var pluginManager = getServer().getPluginManager();
-        pluginManager.registerEvents(
-                new EnchantmentCombatListener(enchantmentRepository, enchantmentExecutor, disableForCreative),
-                this
-        );
-        pluginManager.registerEvents(
-            new EnchantmentInteractListener(
-                enchantmentRepository,
-                enchantmentExecutor,
-                enchantmentCooldownManager,
-                disableForCreative,
-                cooldownMessageTemplate
-            ),
-            this
-        );
-        pluginManager.registerEvents(new EnchantmentEnchantTableListener(enchantmentRepository), this);
-        pluginManager.registerEvents(new FreezeMovementListener(frozenPlayerTracker), this);
+    private void initializeEnchantmentRuntime() {
+        EnchantmentBootstrap bootstrap = new EnchantmentBootstrap(this);
+        this.enchantmentRuntime = bootstrap.initialize();
     }
 
     private AuthProvider createAuthProvider(KnkConfig.AuthConfig authConfig) {

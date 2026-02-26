@@ -2,6 +2,7 @@ package net.knightsandkings.knk.paper.commands.enchantment;
 
 import net.knightsandkings.knk.core.ports.enchantment.CooldownManager;
 import net.knightsandkings.knk.core.ports.enchantment.EnchantmentRepository;
+import net.knightsandkings.knk.paper.config.EnchantmentConfigManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -17,11 +18,18 @@ import java.util.Map;
 
 public class EnchantmentCommandHandler implements CommandExecutor, TabCompleter {
     private final Plugin plugin;
+    private final EnchantmentConfigManager configManager;
     private final EnchantmentCommandValidator validator;
     private final Map<String, EnchantmentSubcommand> subcommands;
 
-    public EnchantmentCommandHandler(Plugin plugin, EnchantmentRepository repository, CooldownManager cooldownManager) {
+    public EnchantmentCommandHandler(
+            Plugin plugin,
+            EnchantmentConfigManager configManager,
+            EnchantmentRepository repository,
+            CooldownManager cooldownManager
+    ) {
         this.plugin = plugin;
+        this.configManager = configManager;
         this.validator = new EnchantmentCommandValidator();
         this.subcommands = new LinkedHashMap<>();
 
@@ -103,16 +111,16 @@ public class EnchantmentCommandHandler implements CommandExecutor, TabCompleter 
         return plugin;
     }
 
+    public EnchantmentConfigManager configManager() {
+        return configManager;
+    }
+
     public String message(String key, String fallback) {
-        return plugin.getConfig().getString("custom-enchantments." + key, fallback);
+        return configManager.getMessage(key, fallback);
     }
 
     public String message(String key, String fallback, Map<String, String> placeholders) {
-        String value = message(key, fallback);
-        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-            value = value.replace(entry.getKey(), entry.getValue());
-        }
-        return value;
+        return configManager.getMessage(key, fallback, placeholders);
     }
 
     public String colorize(String message) {

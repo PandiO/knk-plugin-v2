@@ -37,7 +37,7 @@ public class ScoreboardUtil {
         owner.prefix(Component.text("§5"));
         owner.color(NamedTextColor.DARK_PURPLE);
 
-        Objective health = scoreboard.registerNewObjective("Health", Criteria.HEALTH.getName(), Component.text(ColorOptions.error + "❤"), RenderType.HEARTS);
+        Objective health = scoreboard.registerNewObjective("Health", Criteria.HEALTH.getName(), Component.text("❤").color(ColorOptions.error), RenderType.HEARTS);
         health.setDisplaySlot(DisplaySlot.BELOW_NAME);
 
         return scoreboard;
