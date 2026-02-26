@@ -1,11 +1,13 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.api.impl.enchantment.LocalEnchantmentRepositoryImpl;
 import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.FetchResult;
 import net.knightsandkings.knk.core.domain.common.Page;
 import net.knightsandkings.knk.core.domain.common.PagedQuery;
 import net.knightsandkings.knk.core.domain.enchantments.KnkEnchantmentDefinition;
 import net.knightsandkings.knk.core.exception.ApiException;
+import net.knightsandkings.knk.core.ports.enchantment.EnchantmentRepository;
 import net.knightsandkings.knk.paper.mapper.EnchantmentDefinitionBukkitMapper;
 import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
 import org.bukkit.Bukkit;
@@ -18,14 +20,18 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Command handler for /knk enchantments.
@@ -34,15 +40,17 @@ import java.util.Map;
  * - /knk enchantments list [page] [size]
  * - /knk enchantments vanilla [page] [size]
  * - /knk enchantments search <id|key|displayName> <value> [page] [size]
- * - /knk enchantments apply <id|vanillaName> [level]
+ * - /knk enchantments apply <id|vanillaName|customKey> [level]
  */
 public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
     private final Plugin plugin;
     private final EnchantmentDefinitionsDataAccess dataAccess;
+    private final EnchantmentRepository customEnchantmentRepository;
 
     public EnchantmentDefinitionsDebugCommand(Plugin plugin, EnchantmentDefinitionsDataAccess dataAccess) {
         this.plugin = plugin;
         this.dataAccess = dataAccess;
+        this.customEnchantmentRepository = new LocalEnchantmentRepositoryImpl();
     }
 
     @Override
@@ -51,7 +59,7 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments list [page] [size] | " +
                     "/knk enchantments vanilla [page] [size] | " +
                     "/knk enchantments search <id|key|displayName> <value> [page] [size] | " +
-                    "/knk enchantments apply <id|vanillaName> [level]");
+                    "/knk enchantments apply <id|vanillaName|customKey> [level]");
             return true;
         }
 
@@ -133,7 +141,7 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
         }
 
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id|vanillaName> [level]");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id|vanillaName|customKey> [level]");
             return;
         }
 
@@ -150,7 +158,7 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
         String target = String.join(" ", java.util.Arrays.copyOfRange(args, 1, targetEndExclusive)).trim();
         if (target.isBlank()) {
             sender.sendMessage(ChatColor.RED + "Missing enchantment target.");
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id|vanillaName> [level]");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk enchantments apply <id|vanillaName|customKey> [level]");
             return;
         }
 
@@ -175,7 +183,135 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
             return;
         }
 
-        applyVanillaEnchantment(sender, player, target, finalRequestedLevel);
+        sender.sendMessage(ChatColor.GRAY + "Resolving custom/vanilla enchantment for '" + target + "'...");
+        resolveCustomDefinitionByTargetAsync(target)
+                .thenAccept(definition -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (definition != null) {
+                        applyCustomEnchantment(sender, player, definition, finalRequestedLevel);
+                        return;
+                    }
+
+                    applyVanillaEnchantment(sender, player, target, finalRequestedLevel);
+                }))
+                .exceptionally(ex -> {
+                    Bukkit.getScheduler().runTask(plugin, () -> printError(sender, ex));
+                    return null;
+                });
+    }
+
+    private CompletableFuture<KnkEnchantmentDefinition> resolveCustomDefinitionByTargetAsync(String target) {
+        String trimmedTarget = target != null ? target.trim() : "";
+        if (trimmedTarget.isBlank()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        Set<String> keyCandidates = buildCustomKeyCandidates(trimmedTarget);
+        CompletableFuture<KnkEnchantmentDefinition> search = CompletableFuture.completedFuture(null);
+
+        for (String keyCandidate : keyCandidates) {
+            search = search.thenCompose(found -> {
+                if (found != null) {
+                    return CompletableFuture.completedFuture(found);
+                }
+
+                return searchCustomByFieldAsync("Key", keyCandidate)
+                        .thenApply(page -> pickCustomDefinitionMatch(page, trimmedTarget));
+            });
+        }
+
+        return search.thenCompose(found -> {
+            if (found != null) {
+                return CompletableFuture.completedFuture(found);
+            }
+
+            return searchCustomByFieldAsync("DisplayName", trimmedTarget)
+                    .thenApply(page -> pickCustomDefinitionMatch(page, trimmedTarget));
+        });
+    }
+
+    private CompletableFuture<Page<KnkEnchantmentDefinition>> searchCustomByFieldAsync(String fieldName, String value) {
+        Map<String, String> filters = new HashMap<>();
+        filters.put(fieldName, value);
+        PagedQuery query = new PagedQuery(1, 100, null, null, false, filters);
+        return dataAccess.searchAsync(query);
+    }
+
+    private KnkEnchantmentDefinition pickCustomDefinitionMatch(Page<KnkEnchantmentDefinition> page, String target) {
+        if (page == null || page.items() == null || page.items().isEmpty()) {
+            return null;
+        }
+
+        String normalizedTarget = normalizeCustomLookup(target);
+
+        for (KnkEnchantmentDefinition definition : page.items()) {
+            if (definition == null || !Boolean.TRUE.equals(definition.isCustom())) {
+                continue;
+            }
+
+            if (matchesCustomTarget(definition, normalizedTarget)) {
+                return definition;
+            }
+        }
+
+        for (KnkEnchantmentDefinition definition : page.items()) {
+            if (definition != null && Boolean.TRUE.equals(definition.isCustom())) {
+                return definition;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean matchesCustomTarget(KnkEnchantmentDefinition definition, String normalizedTarget) {
+        if (normalizedTarget == null || normalizedTarget.isBlank() || definition == null) {
+            return false;
+        }
+
+        String key = normalizeCustomLookup(definition.key());
+        String keyPart = normalizeCustomLookup(extractKeyPart(definition.key()));
+        String displayName = normalizeCustomLookup(definition.displayName());
+
+        return normalizedTarget.equals(key)
+                || normalizedTarget.equals(keyPart)
+                || normalizedTarget.equals(displayName);
+    }
+
+    private Set<String> buildCustomKeyCandidates(String target) {
+        Set<String> candidates = new LinkedHashSet<>();
+        String trimmed = target.trim();
+        String lowered = trimmed.toLowerCase(Locale.ROOT);
+        String normalized = lowered.replace(' ', '_').replace('-', '_');
+
+        candidates.add(trimmed);
+        candidates.add(lowered);
+        candidates.add(normalized);
+
+        if (!normalized.contains(":")) {
+            candidates.add("knk:" + normalized);
+        }
+
+        return candidates;
+    }
+
+    private String extractKeyPart(String key) {
+        if (key == null) {
+            return null;
+        }
+
+        int separator = key.indexOf(':');
+        if (separator < 0 || separator >= key.length() - 1) {
+            return key;
+        }
+
+        return key.substring(separator + 1);
+    }
+
+    private String normalizeCustomLookup(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     private void handleVanillaList(CommandSender sender, String[] args) {
@@ -219,6 +355,11 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
             return;
         }
 
+        if (Boolean.TRUE.equals(definition.isCustom())) {
+            applyCustomEnchantment(sender, player, definition, requestedLevel);
+            return;
+        }
+
         EnchantmentDefinitionBukkitMapper.BukkitEnchantmentResolution resolution = EnchantmentDefinitionBukkitMapper.toBukkit(definition);
         if (!resolution.isValid()) {
             sender.sendMessage(ChatColor.RED + "Unable to apply enchantment: " + resolution.error());
@@ -241,11 +382,56 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
                 ChatColor.GREEN + " from KnK definition to your held item.");
     }
 
+    private void applyCustomEnchantment(CommandSender sender, Player player, KnkEnchantmentDefinition definition, int requestedLevel) {
+        EnchantmentDefinitionBukkitMapper.CustomEnchantmentResolution customResolution = EnchantmentDefinitionBukkitMapper.toCustom(definition);
+        if (!customResolution.isValid()) {
+            sender.sendMessage(ChatColor.RED + "Unable to apply custom enchantment: " + customResolution.error());
+            return;
+        }
+
+        int level = requestedLevel > 0 ? requestedLevel : customResolution.defaultLevel();
+        if (level > customResolution.maxLevel()) {
+            sender.sendMessage(ChatColor.RED + "Cannot apply custom enchantment " +
+                    ChatColor.AQUA + customResolution.enchantmentId() + ChatColor.RED +
+                    ": max level is " + ChatColor.AQUA + customResolution.maxLevel());
+            return;
+        }
+
+        ItemStack heldItem = player.getInventory().getItemInMainHand();
+        if (heldItem == null || heldItem.getType().isAir()) {
+            sender.sendMessage(ChatColor.RED + "You are no longer holding a valid item.");
+            return;
+        }
+
+        ItemMeta itemMeta = heldItem.getItemMeta();
+        List<String> lore = itemMeta != null && itemMeta.hasLore() ? itemMeta.getLore() : List.of();
+        List<String> updatedLore = customEnchantmentRepository
+                .applyEnchantment(lore, customResolution.enchantmentId(), level)
+                .join();
+
+        if (itemMeta == null) {
+            itemMeta = plugin.getServer().getItemFactory().getItemMeta(heldItem.getType());
+        }
+
+        if (itemMeta == null) {
+            sender.sendMessage(ChatColor.RED + "Unable to apply custom enchantment: item meta is unavailable.");
+            return;
+        }
+
+        itemMeta.setLore(updatedLore);
+        heldItem.setItemMeta(itemMeta);
+        player.getInventory().setItemInMainHand(heldItem);
+
+        sender.sendMessage(ChatColor.GREEN + "Applied custom " + ChatColor.AQUA + customResolution.enchantmentId() +
+                ChatColor.GREEN + " level " + ChatColor.AQUA + level +
+                ChatColor.GREEN + " from KnK definition to your held item.");
+    }
+
     private void applyVanillaEnchantment(CommandSender sender, Player player, String target, int requestedLevel) {
         Enchantment enchantment = resolveVanillaEnchantment(target);
         if (enchantment == null) {
             sender.sendMessage(ChatColor.RED + "Vanilla enchantment not found: " + target);
-            sender.sendMessage(ChatColor.GRAY + "Tip: use /knk enchantments vanilla to list names.");
+            sender.sendMessage(ChatColor.GRAY + "Tip: use /knk enchantments vanilla to list names, or pass a numeric definition id for custom enchantments.");
             return;
         }
 
@@ -351,6 +537,7 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
                     ChatColor.WHITE + safe(definition.key()) + ChatColor.GRAY + " | " +
                 ChatColor.WHITE + displayName + ChatColor.GRAY +
                     " | maxLevel=" + (definition.maxLevel() != null ? definition.maxLevel() : 1) +
+                    " | type=" + (Boolean.TRUE.equals(definition.isCustom()) ? "custom" : "vanilla") +
                     " | base=" + namespace);
         }
 

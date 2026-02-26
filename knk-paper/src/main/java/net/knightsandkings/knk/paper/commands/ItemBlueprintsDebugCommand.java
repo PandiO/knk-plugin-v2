@@ -1,5 +1,6 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.api.impl.enchantment.LocalEnchantmentRepositoryImpl;
 import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.FetchResult;
 import net.knightsandkings.knk.core.dataaccess.ItemBlueprintsDataAccess;
@@ -11,6 +12,7 @@ import net.knightsandkings.knk.core.domain.item.KnkItemBlueprint;
 import net.knightsandkings.knk.core.domain.item.KnkItemBlueprintDefaultEnchantment;
 import net.knightsandkings.knk.core.domain.material.KnkMinecraftMaterialRef;
 import net.knightsandkings.knk.core.exception.ApiException;
+import net.knightsandkings.knk.core.ports.enchantment.EnchantmentRepository;
 import net.knightsandkings.knk.paper.mapper.EnchantmentDefinitionBukkitMapper;
 import net.knightsandkings.knk.paper.mapper.ItemBlueprintBukkitMapper;
 import net.knightsandkings.knk.paper.utils.DisplayTextFormatter;
@@ -22,6 +24,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayList;
@@ -37,6 +40,7 @@ public class ItemBlueprintsDebugCommand implements CommandExecutor {
     private final ItemBlueprintsDataAccess itemBlueprintsDataAccess;
     private final MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess;
     private final EnchantmentDefinitionsDataAccess enchantmentDefinitionsDataAccess;
+    private final EnchantmentRepository customEnchantmentRepository;
 
     public ItemBlueprintsDebugCommand(
             Plugin plugin,
@@ -48,6 +52,7 @@ public class ItemBlueprintsDebugCommand implements CommandExecutor {
         this.itemBlueprintsDataAccess = itemBlueprintsDataAccess;
         this.minecraftMaterialRefsDataAccess = minecraftMaterialRefsDataAccess;
         this.enchantmentDefinitionsDataAccess = enchantmentDefinitionsDataAccess;
+        this.customEnchantmentRepository = new LocalEnchantmentRepositoryImpl();
     }
 
     @Override
@@ -236,6 +241,28 @@ public class ItemBlueprintsDebugCommand implements CommandExecutor {
                 definition = mapFallbackDefinition(relation);
             }
 
+            if (Boolean.TRUE.equals(definition.isCustom())) {
+                EnchantmentDefinitionBukkitMapper.CustomEnchantmentResolution customResolution = EnchantmentDefinitionBukkitMapper.toCustom(definition);
+                if (!customResolution.isValid()) {
+                    skipped.add(relation.enchantmentDefinitionId() + " (" + customResolution.error() + ")");
+                    continue;
+                }
+
+                int customLevel = relation.level() != null && relation.level() > 0 ? relation.level() : customResolution.defaultLevel();
+                if (customLevel > customResolution.maxLevel()) {
+                    skipped.add(relation.enchantmentDefinitionId() + " (level " + customLevel + " exceeds max " + customResolution.maxLevel() + ")");
+                    continue;
+                }
+
+                if (applyCustomLoreEnchantment(itemStack, customResolution.enchantmentId(), customLevel)) {
+                    applied++;
+                } else {
+                    skipped.add(relation.enchantmentDefinitionId() + " (failed to apply custom lore enchantment)");
+                }
+
+                continue;
+            }
+
             EnchantmentDefinitionBukkitMapper.BukkitEnchantmentResolution resolution = EnchantmentDefinitionBukkitMapper.toBukkit(definition);
             if (!resolution.isValid()) {
                 skipped.add(relation.enchantmentDefinitionId() + " (" + resolution.error() + ")");
@@ -260,6 +287,28 @@ public class ItemBlueprintsDebugCommand implements CommandExecutor {
         if (!skipped.isEmpty()) {
             sender.sendMessage(ChatColor.YELLOW + "Skipped enchantments: " + String.join(", ", skipped));
         }
+    }
+
+    private boolean applyCustomLoreEnchantment(ItemStack itemStack, String enchantmentId, int level) {
+        if (itemStack == null || itemStack.getType().isAir()) {
+            return false;
+        }
+
+        ItemMeta itemMeta = itemStack.getItemMeta();
+        List<String> lore = itemMeta != null && itemMeta.hasLore() ? itemMeta.getLore() : List.of();
+        List<String> updatedLore = customEnchantmentRepository.applyEnchantment(lore, enchantmentId, level).join();
+
+        if (itemMeta == null) {
+            itemMeta = plugin.getServer().getItemFactory().getItemMeta(itemStack.getType());
+        }
+
+        if (itemMeta == null) {
+            return false;
+        }
+
+        itemMeta.setLore(updatedLore);
+        itemStack.setItemMeta(itemMeta);
+        return true;
     }
 
     private CompletableFuture<String> resolveMaterialNamespaceKey(KnkItemBlueprint blueprint) {

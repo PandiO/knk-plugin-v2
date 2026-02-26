@@ -4,6 +4,7 @@ import net.knightsandkings.knk.core.dataaccess.EnchantmentDefinitionsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.ItemBlueprintsDataAccess;
 import net.knightsandkings.knk.core.dataaccess.MinecraftMaterialRefsDataAccess;
 import net.knightsandkings.knk.core.domain.common.Page;
+import net.knightsandkings.knk.core.domain.enchantment.EnchantmentRegistry;
 import net.knightsandkings.knk.core.domain.enchantments.KnkEnchantmentDefinition;
 import net.knightsandkings.knk.core.ports.api.HealthApi;
 import net.knightsandkings.knk.core.ports.api.LocationsQueryApi;
@@ -28,8 +29,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,7 +48,10 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
         private final MinecraftMaterialRefsDataAccess minecraftMaterialRefsDataAccess;
 
         private volatile List<String> cachedKnkEnchantmentIds = List.of();
+        private volatile List<String> cachedKnkEnchantmentKeys = List.of();
+        private volatile List<String> cachedKnkEnchantmentDisplayNames = List.of();
         private volatile List<String> cachedVanillaEnchantmentTokens = List.of();
+        private volatile List<String> cachedRegistryCustomEnchantmentTokens = List.of();
         private volatile long lastKnkIdRefreshMillis = 0L;
         private final AtomicBoolean knkIdRefreshInProgress = new AtomicBoolean(false);
 
@@ -163,14 +169,15 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                 new CommandMetadata(
                         "enchantments",
                         "List/search enchantment definitions and apply to held item",
-                        "/knk enchantments list [page] [size] | /knk enchantments vanilla [page] [size] | /knk enchantments search <id|key|displayName> <value> [page] [size] | /knk enchantments apply <id|vanillaName> [level]",
+                        "/knk enchantments list [page] [size] | /knk enchantments vanilla [page] [size] | /knk enchantments search <id|key|displayName> <value> [page] [size] | /knk enchantments apply <id|vanillaName|customKey> [level]",
                         "knk.admin",
                         List.of(
                                 "/knk enchantments list 1 10",
                                 "/knk enchantments vanilla 1 10",
                                 "/knk enchantments search key minecraft:sharpness",
                                 "/knk enchantments apply 1 3",
-                                "/knk enchantments apply sharpness 3"
+                                "/knk enchantments apply sharpness 3",
+                                "/knk enchantments apply poison 2"
                         )
                 ),
                 (sender, args) -> enchantmentsCommand.onCommand(sender, null, "knk", args),
@@ -251,6 +258,7 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
         );
 
         refreshVanillaEnchantmentTokens();
+                refreshRegistryCustomEnchantmentTokens();
         scheduleKnkIdRefresh();
     }
 
@@ -309,8 +317,46 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
 
                 String enchantmentsSubcommand = args[1].toLowerCase(Locale.ROOT);
 
+                if ("list".equals(enchantmentsSubcommand) || "vanilla".equals(enchantmentsSubcommand)) {
+                        if (args.length == 3) {
+                                return filterByPrefix(List.of("1", "2", "3", "4", "5"), args[2]);
+                        }
+                        if (args.length == 4) {
+                                return filterByPrefix(List.of("10", "25", "50", "100"), args[3]);
+                        }
+                        return Collections.emptyList();
+                }
+
                 if ("search".equals(enchantmentsSubcommand) && args.length == 3) {
                         return filterByPrefix(List.of("id", "key", "displayName"), args[2]);
+                }
+
+                if ("search".equals(enchantmentsSubcommand)) {
+                        refreshKnkIdsIfStale();
+
+                        if (args.length == 4) {
+                                String searchField = args[2].toLowerCase(Locale.ROOT);
+                                return switch (searchField) {
+                                        case "id" -> filterByPrefix(cachedKnkEnchantmentIds, args[3]);
+                                        case "key" -> filterByPrefix(mergeSuggestions(
+                                                        cachedKnkEnchantmentKeys,
+                                                        cachedRegistryCustomEnchantmentTokens,
+                                                        cachedVanillaEnchantmentTokens
+                                                ), args[3]);
+                                        case "displayname", "display_name", "display-name" -> filterByPrefix(cachedKnkEnchantmentDisplayNames, args[3]);
+                                        default -> Collections.emptyList();
+                                };
+                        }
+
+                        if (args.length == 5) {
+                                return filterByPrefix(List.of("1", "2", "3", "4", "5"), args[4]);
+                        }
+
+                        if (args.length == 6) {
+                                return filterByPrefix(List.of("10", "25", "50", "100"), args[5]);
+                        }
+
+                        return Collections.emptyList();
                 }
 
                 if ("apply".equals(enchantmentsSubcommand)) {
@@ -319,6 +365,8 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
 
                                 List<String> suggestions = new ArrayList<>();
                                 suggestions.addAll(cachedKnkEnchantmentIds);
+                                suggestions.addAll(cachedKnkEnchantmentKeys);
+                                suggestions.addAll(cachedRegistryCustomEnchantmentTokens);
                                 suggestions.addAll(cachedVanillaEnchantmentTokens);
                                 return filterByPrefix(suggestions, args[2]);
                         }
@@ -354,9 +402,15 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
 
                 plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
                         try {
-                                List<String> ids = fetchAllKnkIds();
-                                if (!ids.isEmpty()) {
-                                        cachedKnkEnchantmentIds = ids;
+                                KnkEnchantmentSuggestionData suggestionData = fetchAllKnkSuggestionData();
+                                if (!suggestionData.ids().isEmpty()) {
+                                        cachedKnkEnchantmentIds = suggestionData.ids();
+                                }
+                                if (!suggestionData.keys().isEmpty()) {
+                                        cachedKnkEnchantmentKeys = suggestionData.keys();
+                                }
+                                if (!suggestionData.displayNames().isEmpty()) {
+                                        cachedKnkEnchantmentDisplayNames = suggestionData.displayNames();
                                 }
                                 lastKnkIdRefreshMillis = System.currentTimeMillis();
                         } catch (Exception ignored) {
@@ -366,8 +420,10 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                 });
         }
 
-        private List<String> fetchAllKnkIds() {
+        private KnkEnchantmentSuggestionData fetchAllKnkSuggestionData() {
                 List<String> ids = new ArrayList<>();
+                List<String> keys = new ArrayList<>();
+                List<String> displayNames = new ArrayList<>();
                 int page = 1;
 
                 while (true) {
@@ -380,6 +436,12 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                         for (KnkEnchantmentDefinition definition : result.items()) {
                                 if (definition != null && definition.id() != null) {
                                         ids.add(String.valueOf(definition.id()));
+                                        if (definition.key() != null && !definition.key().isBlank()) {
+                                                keys.add(definition.key());
+                                        }
+                                        if (definition.displayName() != null && !definition.displayName().isBlank()) {
+                                                displayNames.add(definition.displayName());
+                                        }
                                 }
                         }
 
@@ -393,11 +455,31 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                         page++;
                 }
 
-                return ids.stream().distinct().sorted(Comparator.comparingInt(Integer::parseInt)).toList();
+                List<String> sortedIds = ids.stream().distinct().sorted(Comparator.comparingInt(Integer::parseInt)).toList();
+                List<String> sortedKeys = keys.stream().distinct().sorted().toList();
+                List<String> sortedDisplayNames = displayNames.stream().distinct().sorted().toList();
+                return new KnkEnchantmentSuggestionData(sortedIds, sortedKeys, sortedDisplayNames);
         }
 
         private void refreshVanillaEnchantmentTokens() {
                 cachedVanillaEnchantmentTokens = getVanillaEnchantmentTokensInternal();
+        }
+
+        private void refreshRegistryCustomEnchantmentTokens() {
+                cachedRegistryCustomEnchantmentTokens = EnchantmentRegistry.getInstance()
+                                .getAll()
+                                .stream()
+                                .map(enchantment -> enchantment.id())
+                                .filter(id -> id != null && !id.isBlank())
+                                .flatMap(id -> {
+                                        if (id.contains(":")) {
+                                                return java.util.stream.Stream.of(id);
+                                        }
+                                        return java.util.stream.Stream.of(id, "knk:" + id);
+                                })
+                                .distinct()
+                                .sorted()
+                                .toList();
         }
 
         private List<String> getVanillaEnchantmentTokensInternal() {
@@ -439,4 +521,21 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                                 .sorted()
                                 .toList();
         }
+
+        private List<String> mergeSuggestions(List<String>... groups) {
+                Set<String> merged = new LinkedHashSet<>();
+                for (List<String> group : groups) {
+                        if (group == null) {
+                                continue;
+                        }
+                        merged.addAll(group);
+                }
+                return new ArrayList<>(merged);
+        }
+
+        private record KnkEnchantmentSuggestionData(
+                        List<String> ids,
+                        List<String> keys,
+                        List<String> displayNames
+        ) {}
 }

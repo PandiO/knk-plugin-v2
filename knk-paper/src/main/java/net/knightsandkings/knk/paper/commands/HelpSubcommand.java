@@ -77,7 +77,7 @@ public class HelpSubcommand {
             sender.sendMessage(ChatColor.WHITE + "  /knk enchantments list [page] [size]");
             sender.sendMessage(ChatColor.WHITE + "  /knk enchantments vanilla [page] [size]");
             sender.sendMessage(ChatColor.WHITE + "  /knk enchantments search <id|key|displayName> <value> [page] [size]");
-            sender.sendMessage(ChatColor.WHITE + "  /knk enchantments apply <id|vanillaName> [level]");
+            sender.sendMessage(ChatColor.WHITE + "  /knk enchantments apply <id|vanillaName|customKey> [level]");
 
             sender.sendMessage("");
             sender.sendMessage(ChatColor.AQUA + "Search fields:");
@@ -88,11 +88,12 @@ public class HelpSubcommand {
             sender.sendMessage("");
             sender.sendMessage(ChatColor.AQUA + "Apply notes:");
             sender.sendMessage(ChatColor.GRAY + "  - You must hold an item in your main hand");
-            sender.sendMessage(ChatColor.GRAY + "  - Optional [level] allows unsafe levels");
+            sender.sendMessage(ChatColor.GRAY + "  - Optional [level] allows unsafe levels for vanilla enchantments");
             sender.sendMessage(ChatColor.GRAY + "  - Numeric target = KnK enchantment definition id");
             sender.sendMessage(ChatColor.GRAY + "  - Text target = vanilla enchantment name/key");
+            sender.sendMessage(ChatColor.GRAY + "  - Custom definitions (IsCustom=true) are applied as custom lore enchantments");
             sender.sendMessage(ChatColor.GRAY + "  - Use /knk enchantments vanilla to discover names");
-            sender.sendMessage(ChatColor.GRAY + "  - Resolved using baseEnchantmentNamespaceKey / minecraft:* key");
+            sender.sendMessage(ChatColor.GRAY + "  - Vanilla definitions resolve via baseEnchantmentNamespaceKey / minecraft:* key");
         }
     }
 }
