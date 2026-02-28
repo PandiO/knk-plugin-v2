@@ -274,6 +274,8 @@ public class ItemBlueprintsDebugCommand implements CommandExecutor {
             applied++;
         }
 
+        reorderLoreEnchantmentsFirst(itemStack);
+
         Map<Integer, ItemStack> overflow = targetPlayer.getInventory().addItem(itemStack);
         if (!overflow.isEmpty()) {
             overflow.values().forEach(stack -> targetPlayer.getWorld().dropItemNaturally(targetPlayer.getLocation(), stack));
@@ -309,6 +311,60 @@ public class ItemBlueprintsDebugCommand implements CommandExecutor {
         itemMeta.setLore(updatedLore);
         itemStack.setItemMeta(itemMeta);
         return true;
+    }
+
+    private void reorderLoreEnchantmentsFirst(ItemStack itemStack) {
+        if (itemStack == null || itemStack.getType().isAir()) {
+            return;
+        }
+
+        ItemMeta itemMeta = itemStack.getItemMeta();
+        List<String> lore = itemMeta != null && itemMeta.hasLore() ? itemMeta.getLore() : List.of();
+        List<String> reorderedLore = reorderLoreEnchantmentsFirst(lore);
+        if (reorderedLore.equals(lore)) {
+            return;
+        }
+
+        if (itemMeta == null) {
+            itemMeta = plugin.getServer().getItemFactory().getItemMeta(itemStack.getType());
+        }
+
+        if (itemMeta == null) {
+            return;
+        }
+
+        itemMeta.setLore(reorderedLore);
+        itemStack.setItemMeta(itemMeta);
+    }
+
+    private List<String> reorderLoreEnchantmentsFirst(List<String> loreLines) {
+        if (loreLines == null || loreLines.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Integer> enchantments = customEnchantmentRepository.getEnchantments(loreLines).join();
+        if (enchantments.isEmpty()) {
+            return loreLines;
+        }
+
+        List<String> nonEnchantmentLore = new ArrayList<>(loreLines);
+        for (String enchantmentId : enchantments.keySet()) {
+            nonEnchantmentLore = customEnchantmentRepository.removeEnchantment(nonEnchantmentLore, enchantmentId).join();
+        }
+
+        List<String> enchantmentLore = new ArrayList<>();
+        for (Map.Entry<String, Integer> enchantmentEntry : enchantments.entrySet()) {
+            int level = enchantmentEntry.getValue() != null && enchantmentEntry.getValue() > 0
+                    ? enchantmentEntry.getValue()
+                    : 1;
+            enchantmentLore = customEnchantmentRepository
+                    .applyEnchantment(enchantmentLore, enchantmentEntry.getKey(), level)
+                    .join();
+        }
+
+        List<String> reorderedLore = new ArrayList<>(enchantmentLore);
+        reorderedLore.addAll(nonEnchantmentLore);
+        return reorderedLore;
     }
 
     private CompletableFuture<String> resolveMaterialNamespaceKey(KnkItemBlueprint blueprint) {

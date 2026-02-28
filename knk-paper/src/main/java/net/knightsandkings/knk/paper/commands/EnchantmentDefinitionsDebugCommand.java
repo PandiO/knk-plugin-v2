@@ -408,6 +408,7 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
         List<String> updatedLore = customEnchantmentRepository
                 .applyEnchantment(lore, customResolution.enchantmentId(), level)
                 .join();
+        updatedLore = reorderLoreEnchantmentsFirst(updatedLore);
 
         if (itemMeta == null) {
             itemMeta = plugin.getServer().getItemFactory().getItemMeta(heldItem.getType());
@@ -425,6 +426,36 @@ public class EnchantmentDefinitionsDebugCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.GREEN + "Applied custom " + ChatColor.AQUA + customResolution.enchantmentId() +
                 ChatColor.GREEN + " level " + ChatColor.AQUA + level +
                 ChatColor.GREEN + " from KnK definition to your held item.");
+    }
+
+    private List<String> reorderLoreEnchantmentsFirst(List<String> loreLines) {
+        if (loreLines == null || loreLines.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Integer> enchantments = customEnchantmentRepository.getEnchantments(loreLines).join();
+        if (enchantments.isEmpty()) {
+            return loreLines;
+        }
+
+        List<String> nonEnchantmentLore = loreLines;
+        for (String enchantmentId : enchantments.keySet()) {
+            nonEnchantmentLore = customEnchantmentRepository.removeEnchantment(nonEnchantmentLore, enchantmentId).join();
+        }
+
+        List<String> enchantmentLore = List.of();
+        for (Map.Entry<String, Integer> enchantmentEntry : enchantments.entrySet()) {
+            int enchantmentLevel = enchantmentEntry.getValue() != null && enchantmentEntry.getValue() > 0
+                    ? enchantmentEntry.getValue()
+                    : 1;
+            enchantmentLore = customEnchantmentRepository
+                    .applyEnchantment(enchantmentLore, enchantmentEntry.getKey(), enchantmentLevel)
+                    .join();
+        }
+
+        List<String> reorderedLore = new ArrayList<>(enchantmentLore);
+        reorderedLore.addAll(nonEnchantmentLore);
+        return reorderedLore;
     }
 
     private void applyVanillaEnchantment(CommandSender sender, Player player, String target, int requestedLevel) {

@@ -89,6 +89,7 @@ public class AddEnchantmentCommand implements EnchantmentSubcommand {
         ItemMeta itemMeta = itemInHand.getItemMeta();
         List<String> lore = itemMeta != null && itemMeta.hasLore() ? itemMeta.getLore() : List.of();
         List<String> updatedLore = repository.applyEnchantment(lore, enchantment.id(), level).join();
+        updatedLore = reorderLoreEnchantmentsFirst(updatedLore);
 
         if (itemMeta == null) {
             itemMeta = handler.plugin().getServer().getItemFactory().getItemMeta(itemInHand.getType());
@@ -101,6 +102,36 @@ public class AddEnchantmentCommand implements EnchantmentSubcommand {
 
         sender.sendMessage(handler.colorize(handler.message("messages.cmd-add-success", "&aEnchantment was added to item successfully.")));
         return true;
+    }
+
+    private List<String> reorderLoreEnchantmentsFirst(List<String> loreLines) {
+        if (loreLines == null || loreLines.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Integer> enchantments = repository.getEnchantments(loreLines).join();
+        if (enchantments.isEmpty()) {
+            return loreLines;
+        }
+
+        List<String> nonEnchantmentLore = loreLines;
+        for (String enchantmentId : enchantments.keySet()) {
+            nonEnchantmentLore = repository.removeEnchantment(nonEnchantmentLore, enchantmentId).join();
+        }
+
+        List<String> enchantmentLore = List.of();
+        for (Map.Entry<String, Integer> enchantmentEntry : enchantments.entrySet()) {
+            int enchantmentLevel = enchantmentEntry.getValue() != null && enchantmentEntry.getValue() > 0
+                    ? enchantmentEntry.getValue()
+                    : 1;
+            enchantmentLore = repository
+                    .applyEnchantment(enchantmentLore, enchantmentEntry.getKey(), enchantmentLevel)
+                    .join();
+        }
+
+        List<String> reorderedLore = new java.util.ArrayList<>(enchantmentLore);
+        reorderedLore.addAll(nonEnchantmentLore);
+        return reorderedLore;
     }
 
     @Override
