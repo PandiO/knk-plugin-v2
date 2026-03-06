@@ -70,6 +70,7 @@ public class KnkApiClient {
     private final UsersCommandApi usersCommandApi;
     private final UserAccountApi userAccountApi;
     private final WorldTasksApi worldTasksApi;
+    private final GateStructuresApi gateStructuresApi;
     
     private KnkApiClient(
         String baseUrl,
@@ -100,6 +101,7 @@ public class KnkApiClient {
         this.usersCommandApi = new UsersCommandApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.userAccountApi = new UserAccountApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
         this.worldTasksApi = new WorldTasksApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
+        this.gateStructuresApi = new GateStructuresApiImpl(baseUrl, httpClient, objectMapper, authProvider, executor, debugLogging);
     }
     
     public HealthApi getHealthApi() {
@@ -156,6 +158,10 @@ public class KnkApiClient {
     
     public WorldTasksApi getWorldTasksApi() {
         return worldTasksApi;
+    }
+    
+    public GateStructuresApi getGateStructuresApi() {
+        return gateStructuresApi;
     }
     
     /**
