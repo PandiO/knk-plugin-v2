@@ -3,6 +3,7 @@ package net.knightsandkings.knk.api.client;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import net.knightsandkings.knk.api.serialization.LenientOffsetDateTimeDeserializer;
 import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.auth.NoAuthProvider;
 import net.knightsandkings.knk.api.impl.HealthApiImpl;
@@ -43,6 +44,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -251,9 +253,12 @@ public class KnkApiClient {
             
             OkHttpClient httpClient = httpClientBuilder.build();
             
+            JavaTimeModule javaTimeModule = new JavaTimeModule();
+            javaTimeModule.addDeserializer(OffsetDateTime.class, new LenientOffsetDateTimeDeserializer());
+
             ObjectMapper objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-                .registerModule(new JavaTimeModule());
+                .registerModule(javaTimeModule);
             
             ExecutorService finalExecutor = executor;
             if (finalExecutor == null) {
