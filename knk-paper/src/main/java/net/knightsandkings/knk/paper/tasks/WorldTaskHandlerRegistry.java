@@ -14,6 +14,7 @@ import java.util.logging.Logger;
 public class WorldTaskHandlerRegistry {
     private static final Logger LOGGER = Logger.getLogger(WorldTaskHandlerRegistry.class.getName());
     private final Map<String, IWorldTaskHandler> handlers = new HashMap<>();
+    private final Map<String, IWorldTaskHandler> handlersByTaskType = new HashMap<>();
 
     /**
      * Register a handler for a specific field type.
@@ -29,12 +30,36 @@ public class WorldTaskHandlerRegistry {
     }
 
     /**
+     * Register a handler for a configured world task type.
+     * @param taskType The task type emitted by FormConfig
+     * @param handler The handler to register
+     */
+    public void registerHandler(String taskType, IWorldTaskHandler handler) {
+        if (handlersByTaskType.containsKey(taskType)) {
+            LOGGER.warning("Handler for task type '" + taskType + "' is already registered. Overwriting.");
+        }
+        handlersByTaskType.put(taskType, handler);
+        LOGGER.info("Registered WorldTask handler for task type: " + taskType);
+    }
+
+    /**
      * Get a handler for a specific field type.
      * @param fieldName The field name
      * @return The handler, if registered
      */
     public Optional<IWorldTaskHandler> getHandler(String fieldName) {
         return Optional.ofNullable(handlers.get(fieldName));
+    }
+
+    /**
+     * Resolve a handler by configured task type, falling back to the legacy field name.
+     * @param taskType The configured task type
+     * @param fieldName The entity field name
+     * @return The handler, if registered
+     */
+    public Optional<IWorldTaskHandler> getHandler(String taskType, String fieldName) {
+        IWorldTaskHandler taskTypeHandler = handlersByTaskType.get(taskType);
+        return taskTypeHandler != null ? Optional.of(taskTypeHandler) : getHandler(fieldName);
     }
 
     /**
@@ -54,6 +79,20 @@ public class WorldTaskHandlerRegistry {
             LOGGER.warning("No handler registered for field: " + fieldName);
             return false;
         }
+    }
+
+    /**
+     * Start a task using its configured task type, with legacy field-name fallback.
+     */
+    public boolean startTask(Player player, String taskType, String fieldName, int taskId, String inputJson) {
+        Optional<IWorldTaskHandler> handler = getHandler(taskType, fieldName);
+        if (handler.isPresent()) {
+            handler.get().startTask(player, taskId, inputJson);
+            return true;
+        }
+
+        LOGGER.warning("No handler registered for task type '" + taskType + "' or field '" + fieldName + "'");
+        return false;
     }
 
     /**

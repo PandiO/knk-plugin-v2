@@ -92,7 +92,8 @@ public class KnkTaskClaimCommand implements CommandExecutor {
                     // Start the handler if available
                     boolean started = handlerRegistry.startTask(
                         player, 
-                        claimedTask.fieldName(), 
+                        claimedTask.taskType(),
+                        claimedTask.fieldName(),
                         claimedTask.id(), 
                         claimedTask.inputJson()
                     );
@@ -100,7 +101,7 @@ public class KnkTaskClaimCommand implements CommandExecutor {
                     if (started) {
                         sender.sendMessage(ChatColor.YELLOW + "Handler started. Follow the prompts to complete the task.");
                     } else {
-                        sender.sendMessage(ChatColor.YELLOW + "⚠ No handler registered for field: " + claimedTask.fieldName());
+                        sender.sendMessage(ChatColor.YELLOW + "⚠ No handler registered for task type: " + claimedTask.taskType());
                         sender.sendMessage(ChatColor.GRAY + "You may need to complete this task manually.");
                     }
                 });

@@ -13,6 +13,7 @@ public record WorldTaskDto(
         @JsonProperty("entityType") String entityType,
         @JsonProperty("stepNumber") Integer stepNumber,
         @JsonProperty("fieldName") String fieldName,
+        @JsonProperty("taskType") String taskType,
         @JsonProperty("status") String status,
         @JsonProperty("linkCode") String linkCode,
         @JsonProperty("claimedByServerId") String claimedByServerId,

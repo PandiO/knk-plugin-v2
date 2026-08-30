@@ -214,6 +214,7 @@ public class KnKPlugin extends JavaPlugin {
             // Register Location handler
             LocationTaskHandler locationHandler = new LocationTaskHandler(worldTasksApi, this);
             worldTaskHandlerRegistry.registerHandler(locationHandler);
+            worldTaskHandlerRegistry.registerHandler("LocationSelection", locationHandler);
 
             // Start lightweight HTTP server for region rename callbacks (default port 8081)
             int httpPort = 8081;
