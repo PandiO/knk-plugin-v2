@@ -54,6 +54,7 @@ import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
 import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
 import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
+import net.knightsandkings.knk.paper.listeners.WorldTaskLocationSelectionListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
 import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
@@ -322,6 +323,12 @@ public class KnKPlugin extends JavaPlugin {
                 this
             );
             getLogger().info("Registered WorldTaskChatListener for task chat input handling");
+
+            getServer().getPluginManager().registerEvents(
+                new WorldTaskLocationSelectionListener(locationHandler),
+                this
+            );
+            getLogger().info("Registered WorldTaskLocationSelectionListener for block selection");
             
             getLogger().info("Region transition service initialized with domain resolver and gate control");
 

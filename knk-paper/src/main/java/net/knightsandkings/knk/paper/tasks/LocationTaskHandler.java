@@ -15,6 +15,7 @@ import net.knightsandkings.knk.paper.utils.PlaceholderInterpolationUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
@@ -24,8 +25,8 @@ import java.util.logging.Logger;
 
 /**
  * Handler for Location field tasks.
- * Allows admins to capture a player's current position (x, y, z, yaw, pitch)
- * by typing 'save' in chat during the task.
+ * Allows admins to capture a player's current position by typing 'save', or a
+ * block location by right-clicking a block during the task.
  */
 public class LocationTaskHandler implements IWorldTaskHandler {
     private static final Logger LOGGER = Logger.getLogger(LocationTaskHandler.class.getName());
@@ -73,7 +74,8 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         player.sendMessage("§7[WorldTask] Task ID: " + taskId);
         player.sendMessage("§eType 'save' to capture your current position (x, y, z, yaw, pitch)");
         player.sendMessage("§eType 'save <name>' to capture and set a custom location name (supports spaces)");
-        player.sendMessage("§eType 'pause' to temporarily pause the task");
+        player.sendMessage("§eOr right-click a block to capture that block's location");
+        player.sendMessage("§eType 'pause' to build and interact with blocks normally");
         player.sendMessage("§eType 'resume' to continue after pausing");
         player.sendMessage("§7Or type 'cancel' to abort.");
 
@@ -142,14 +144,31 @@ public class LocationTaskHandler implements IWorldTaskHandler {
      * Handle save command: capture player location and complete task
      */
     private void handleSave(Player player, TaskContext context, String providedLocationName) {
+        captureLocation(player, context, player.getLocation(), providedLocationName);
+    }
+
+    /**
+     * Handle a block right-click during an active location task.
+     *
+     * @return true if the block selection was handled
+     */
+    public boolean onBlockRightClick(Player player, Block clickedBlock) {
+        TaskContext context = activeTasksByPlayer.get(player);
+        if (context == null || context.paused || clickedBlock == null) {
+            return false;
+        }
+
+        captureLocation(player, context, clickedBlock.getLocation(), null);
+        return true;
+    }
+
+    private void captureLocation(Player player, TaskContext context, Location location, String providedLocationName) {
         if (context.paused) {
             player.sendMessage("§c[WorldTask] Task is paused. Type 'resume' to continue.");
             return;
         }
 
         try {
-            Location location = player.getLocation();
-            
             // Validate location
             if (location == null || location.getWorld() == null) {
                 player.sendMessage("§c[WorldTask] Error: Invalid location. Please try again.");
@@ -210,6 +229,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
     private void handlePause(Player player, TaskContext context) {
         context.paused = true;
         player.sendMessage("§e[WorldTask] Task paused.");
+        player.sendMessage("§7You can now place and interact with blocks normally.");
         player.sendMessage("§7Type 'resume' to continue, or 'cancel' to abort.");
         LOGGER.info("Paused Location task " + context.taskId + " for player " + player.getName());
     }
@@ -225,7 +245,7 @@ public class LocationTaskHandler implements IWorldTaskHandler {
         
         context.paused = false;
         player.sendMessage("§a[WorldTask] Task resumed.");
-        player.sendMessage("§7Type 'save' to capture your current position.");
+        player.sendMessage("§7Type 'save' to capture your current position, or right-click a block.");
         LOGGER.info("Resumed Location task " + context.taskId + " for player " + player.getName());
     }
 
