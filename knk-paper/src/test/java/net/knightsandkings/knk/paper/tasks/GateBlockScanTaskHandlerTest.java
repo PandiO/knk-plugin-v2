@@ -8,6 +8,7 @@ import org.bukkit.plugin.Plugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -63,6 +64,25 @@ class GateBlockScanTaskHandlerTest {
     void testCheckScanSizeLimit_ConfiguredCapAboveAbsoluteMax_IsClampedToAbsoluteMax() {
         assertNotNull(GateBlockScanTaskHandler.checkScanSizeLimit(20001, 999999));
         assertNull(GateBlockScanTaskHandler.checkScanSizeLimit(20000, 999999));
+    }
+
+    @Test
+    void testParseMaterialSet_JsonArray_NormalizesToNamespacedLowercase() {
+        Set<String> result = GateBlockScanTaskHandler.parseMaterialSet("[\"minecraft:Stone\", \"oak_planks\"]");
+        assertEquals(Set.of("minecraft:stone", "minecraft:oak_planks"), result);
+    }
+
+    @Test
+    void testParseMaterialSet_CommaSeparatedFallback() {
+        Set<String> result = GateBlockScanTaskHandler.parseMaterialSet("stone, minecraft:dirt ,water");
+        assertEquals(Set.of("minecraft:stone", "minecraft:dirt", "minecraft:water"), result);
+    }
+
+    @Test
+    void testParseMaterialSet_BlankOrNull_ReturnsEmptySet() {
+        assertTrue(GateBlockScanTaskHandler.parseMaterialSet(null).isEmpty());
+        assertTrue(GateBlockScanTaskHandler.parseMaterialSet("").isEmpty());
+        assertTrue(GateBlockScanTaskHandler.parseMaterialSet("   ").isEmpty());
     }
 
     @Test

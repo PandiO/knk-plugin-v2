@@ -18,17 +18,24 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
  * Headless WorldTask handler that scans a gate's blocks into GateBlockSnapshot rows.
- * Only PLANE_GRID geometry is implemented; FLOOD_FILL fails with a clear message (see class notes).
+ * Supports both geometry modes: PLANE_GRID (deterministic box) and FLOOD_FILL (BFS from SeedBlocks).
  *
  * Known limitations of this first implementation:
- * - FLOOD_FILL geometry mode is not implemented yet (fails the task with an explanatory message).
  * - Tile entity contents (chest inventory, sign text, etc.) are not captured; only a warning is emitted.
+ * - ScanMaterialWhitelist/ScanMaterialBlacklist are interpreted as a JSON array (or comma-separated
+ *   list) of Bukkit material keys, e.g. ["minecraft:stone","oak_planks"]; numeric MinecraftMaterialRef
+ *   IDs are not resolved.
  */
 public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
     private static final Logger LOGGER = Logger.getLogger(GateBlockScanTaskHandler.class.getName());
@@ -37,6 +44,7 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
     private static final int BLOCKS_PER_TICK_WHEN_LAGGING = 50;
     private static final double LAG_TPS_THRESHOLD = 15.0;
     private static final int DEFAULT_SCAN_MAX_BLOCKS = 500; // matches GateStructure.ScanMaxBlocks default
+    private static final int DEFAULT_SCAN_MAX_RADIUS = 20; // matches GateStructure.ScanMaxRadius default
     private static final int ABSOLUTE_MAX_CELLS = 20000; // hard ceiling regardless of gate configuration
 
     private final GateStructuresApi gateStructuresApi;
@@ -75,12 +83,17 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
     }
 
     private void startScan(int taskId, GateStructureDto gate, Runnable onFinished) {
-        if (!"PLANE_GRID".equals(gate.getGeometryDefinitionMode())) {
-            fail(taskId, "FLOOD_FILL scanning is not implemented yet for gate '" + gate.getName()
-                + "'. Configure PLANE_GRID geometry or scan manually.", onFinished);
-            return;
+        String mode = gate.getGeometryDefinitionMode();
+        if ("PLANE_GRID".equals(mode)) {
+            startPlaneGridScan(taskId, gate, onFinished);
+        } else if ("FLOOD_FILL".equals(mode)) {
+            startFloodFillScan(taskId, gate, onFinished);
+        } else {
+            fail(taskId, "Gate '" + gate.getName() + "' has an unknown GeometryDefinitionMode: " + mode, onFinished);
         }
+    }
 
+    private void startPlaneGridScan(int taskId, GateStructureDto gate, Runnable onFinished) {
         List<ScanWing> wings = buildScanWings(gate);
         if (wings.isEmpty()) {
             fail(taskId, "Gate '" + gate.getName() + "' is missing anchor/reference points required for scanning.", onFinished);
@@ -157,6 +170,84 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
         }
 
         return wings;
+    }
+
+    private void startFloodFillScan(int taskId, GateStructureDto gate, Runnable onFinished) {
+        String worldName = CoordinateParser.parseWorldName(gate.getAnchorPoint());
+        List<Vector> seeds = CoordinateParser.parseCoordinates(gate.getSeedBlocks());
+        if (seeds.isEmpty()) {
+            Vector singleSeed = CoordinateParser.parseCoordinate(gate.getSeedBlocks());
+            if (singleSeed != null) {
+                seeds = List.of(singleSeed);
+            }
+        }
+
+        if (worldName.isBlank() || seeds.isEmpty()) {
+            fail(taskId, "Gate '" + gate.getName() + "' is missing SeedBlocks or an anchor world required for FLOOD_FILL scanning.", onFinished);
+            return;
+        }
+
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            fail(taskId, "World '" + worldName + "' for gate '" + gate.getName() + "' is not loaded.", onFinished);
+            return;
+        }
+
+        Set<String> whitelist = parseMaterialSet(gate.getScanMaterialWhitelist());
+        Set<String> blacklist = parseMaterialSet(gate.getScanMaterialBlacklist());
+        int scanMaxBlocks = Math.min(
+            gate.getScanMaxBlocks() != null && gate.getScanMaxBlocks() > 0 ? gate.getScanMaxBlocks() : DEFAULT_SCAN_MAX_BLOCKS,
+            ABSOLUTE_MAX_CELLS
+        );
+        int scanMaxRadius = gate.getScanMaxRadius() != null && gate.getScanMaxRadius() > 0
+            ? gate.getScanMaxRadius() : DEFAULT_SCAN_MAX_RADIUS;
+        boolean planeConstraint = Boolean.TRUE.equals(gate.getScanPlaneConstraint());
+        boolean captureTileEntities = !"NONE".equals(gate.getTileEntityPolicy());
+
+        new FloodFillScanRunnable(taskId, gate, world, seeds.get(0), seeds, whitelist, blacklist,
+            scanMaxBlocks, scanMaxRadius, planeConstraint, captureTileEntities, onFinished)
+            .runTaskTimer(plugin, 1L, 1L);
+    }
+
+    /**
+     * Parses ScanMaterialWhitelist/ScanMaterialBlacklist as a JSON array of material keys,
+     * falling back to a comma-separated list. Bare keys ("stone") are normalized to "minecraft:stone".
+     */
+    static Set<String> parseMaterialSet(String raw) {
+        Set<String> result = new HashSet<>();
+        if (raw == null || raw.isBlank()) {
+            return result;
+        }
+
+        List<String> tokens = new ArrayList<>();
+        try {
+            com.google.gson.JsonElement parsed = JsonParser.parseString(raw);
+            if (parsed.isJsonArray()) {
+                for (com.google.gson.JsonElement element : parsed.getAsJsonArray()) {
+                    tokens.add(element.getAsString());
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through to comma-separated parsing
+        }
+
+        if (tokens.isEmpty()) {
+            for (String token : raw.split(",")) {
+                if (!token.isBlank()) {
+                    tokens.add(token.trim());
+                }
+            }
+        }
+
+        for (String token : tokens) {
+            String normalized = token.trim().toLowerCase(Locale.ROOT);
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            result.add(normalized.contains(":") ? normalized : "minecraft:" + normalized);
+        }
+
+        return result;
     }
 
     private void fail(int taskId, String message, Runnable onFinished) {
@@ -310,6 +401,175 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
         private void finish() {
             if (skippedUnloadedChunks > 0) {
                 warnings.add(skippedUnloadedChunks + " cell(s) were skipped because their chunk was not loaded.");
+            }
+
+            String status = warnings.isEmpty() ? "Success" : "Warning";
+            if (snapshots.isEmpty()) {
+                status = "Failed";
+                warnings.add("No blocks were captured for gate '" + gate.getName() + "'.");
+            }
+
+            String outputJson = buildOutputJson(status, snapshots, warnings, null);
+
+            if ("Failed".equals(status)) {
+                fail(taskId, String.join(" ", warnings), onFinished);
+            } else {
+                complete(taskId, outputJson, onFinished);
+            }
+        }
+    }
+
+    /**
+     * BFS flood fill from one or more seed blocks, respecting whitelist/blacklist boundaries,
+     * ScanMaxBlocks/ScanMaxRadius limits, and an optional single-plane constraint.
+     * Processes a bounded number of cells per tick, same as {@link ChunkedScanRunnable}.
+     */
+    private class FloodFillScanRunnable extends BukkitRunnable {
+        private final int taskId;
+        private final GateStructureDto gate;
+        private final World world;
+        private final Vector origin;
+        private final Set<String> whitelist;
+        private final Set<String> blacklist;
+        private final int scanMaxBlocks;
+        private final int scanMaxRadiusSquared;
+        private final boolean planeConstraint;
+        private final boolean captureTileEntities;
+        private final Runnable onFinished;
+
+        private final Deque<Vector> frontier = new ArrayDeque<>();
+        private final Set<Long> visited = new HashSet<>();
+        private final List<GateBlockSnapshotScanDto> snapshots = new ArrayList<>();
+        private final List<String> warnings = new ArrayList<>();
+        private int sortOrder = 0;
+        private int skippedUnloadedChunks = 0;
+        private boolean tileEntityWarningAdded = false;
+        private boolean cappedByMaxBlocks = false;
+
+        FloodFillScanRunnable(int taskId, GateStructureDto gate, World world, Vector origin, List<Vector> seeds,
+                              Set<String> whitelist, Set<String> blacklist, int scanMaxBlocks, int scanMaxRadius,
+                              boolean planeConstraint, boolean captureTileEntities, Runnable onFinished) {
+            this.taskId = taskId;
+            this.gate = gate;
+            this.world = world;
+            this.origin = origin;
+            this.whitelist = whitelist;
+            this.blacklist = blacklist;
+            this.scanMaxBlocks = scanMaxBlocks;
+            this.scanMaxRadiusSquared = scanMaxRadius * scanMaxRadius;
+            this.planeConstraint = planeConstraint;
+            this.captureTileEntities = captureTileEntities;
+            this.onFinished = onFinished;
+
+            for (Vector seed : seeds) {
+                Vector blockSeed = new Vector(seed.getBlockX(), seed.getBlockY(), seed.getBlockZ());
+                if (visited.add(packCoordinate(blockSeed))) {
+                    frontier.add(blockSeed);
+                }
+            }
+        }
+
+        @Override
+        public void run() {
+            int budget = isServerLagging() ? BLOCKS_PER_TICK_WHEN_LAGGING : BLOCKS_PER_TICK;
+            int processed = 0;
+
+            while (!frontier.isEmpty() && processed < budget && snapshots.size() < scanMaxBlocks) {
+                processCell(frontier.poll());
+                processed++;
+            }
+
+            if (snapshots.size() >= scanMaxBlocks && !frontier.isEmpty()) {
+                cappedByMaxBlocks = true;
+                frontier.clear();
+            }
+
+            if (frontier.isEmpty()) {
+                finish();
+                cancel();
+            }
+        }
+
+        private void processCell(Vector cell) {
+            if (origin.distanceSquared(cell) > scanMaxRadiusSquared) {
+                return;
+            }
+
+            int worldX = cell.getBlockX();
+            int worldY = cell.getBlockY();
+            int worldZ = cell.getBlockZ();
+
+            if (!world.isChunkLoaded(worldX >> 4, worldZ >> 4)) {
+                skippedUnloadedChunks++;
+                return;
+            }
+
+            Block block = world.getBlockAt(worldX, worldY, worldZ);
+            String materialKey = block.getType().getKey().toString();
+
+            if (!blacklist.isEmpty() && blacklist.contains(materialKey)) {
+                return; // boundary: stop here, don't record, don't expand
+            }
+            if (!whitelist.isEmpty() && !whitelist.contains(materialKey)) {
+                return; // boundary: not part of the gate, don't expand past it
+            }
+
+            int relativeX = worldX - origin.getBlockX();
+            int relativeY = worldY - origin.getBlockY();
+            int relativeZ = worldZ - origin.getBlockZ();
+
+            String tileEntityJson = "{}";
+            if (captureTileEntities && block.getState() instanceof TileState && !tileEntityWarningAdded) {
+                warnings.add("Tile entity contents (inventory/text/etc.) are not captured yet; only the block type was recorded.");
+                tileEntityWarningAdded = true;
+            }
+
+            snapshots.add(new GateBlockSnapshotScanDto(
+                relativeX, relativeY, relativeZ,
+                worldX, worldY, worldZ,
+                materialKey,
+                block.getBlockData().getAsString(),
+                tileEntityJson,
+                sortOrder++
+            ));
+
+            enqueueNeighbor(worldX + 1, worldY, worldZ);
+            enqueueNeighbor(worldX - 1, worldY, worldZ);
+            enqueueNeighbor(worldX, worldY, worldZ + 1);
+            enqueueNeighbor(worldX, worldY, worldZ - 1);
+            if (!planeConstraint) {
+                enqueueNeighbor(worldX, worldY + 1, worldZ);
+                enqueueNeighbor(worldX, worldY - 1, worldZ);
+            }
+        }
+
+        private void enqueueNeighbor(int x, int y, int z) {
+            Vector neighbor = new Vector(x, y, z);
+            if (visited.add(packCoordinate(neighbor))) {
+                frontier.add(neighbor);
+            }
+        }
+
+        private long packCoordinate(Vector v) {
+            return (((long) v.getBlockX() & 0x1FFFFF) << 42)
+                | (((long) v.getBlockY() & 0xFFFFF) << 21)
+                | ((long) v.getBlockZ() & 0x1FFFFF);
+        }
+
+        private boolean isServerLagging() {
+            try {
+                return Bukkit.getTPS()[0] < LAG_TPS_THRESHOLD;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        private void finish() {
+            if (skippedUnloadedChunks > 0) {
+                warnings.add(skippedUnloadedChunks + " cell(s) were skipped because their chunk was not loaded.");
+            }
+            if (cappedByMaxBlocks) {
+                warnings.add("Reached ScanMaxBlocks limit of " + scanMaxBlocks + "; the scan may be incomplete.");
             }
 
             String status = warnings.isEmpty() ? "Success" : "Warning";
