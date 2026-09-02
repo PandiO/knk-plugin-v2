@@ -36,6 +36,8 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
     private static final int BLOCKS_PER_TICK = 200;
     private static final int BLOCKS_PER_TICK_WHEN_LAGGING = 50;
     private static final double LAG_TPS_THRESHOLD = 15.0;
+    private static final int DEFAULT_SCAN_MAX_BLOCKS = 500; // matches GateStructure.ScanMaxBlocks default
+    private static final int ABSOLUTE_MAX_CELLS = 20000; // hard ceiling regardless of gate configuration
 
     private final GateStructuresApi gateStructuresApi;
     private final WorldTasksApi worldTasksApi;
@@ -82,6 +84,17 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
         List<ScanWing> wings = buildScanWings(gate);
         if (wings.isEmpty()) {
             fail(taskId, "Gate '" + gate.getName() + "' is missing anchor/reference points required for scanning.", onFinished);
+            return;
+        }
+
+        long totalCells = 0;
+        for (ScanWing wing : wings) {
+            totalCells += (long) wing.width * wing.height * wing.depth;
+        }
+
+        String sizeError = checkScanSizeLimit(totalCells, gate.getScanMaxBlocks());
+        if (sizeError != null) {
+            fail(taskId, "Scan area for gate '" + gate.getName() + "' " + sizeError, onFinished);
             return;
         }
 
@@ -171,6 +184,22 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
             }
         } catch (Exception e) {
             LOGGER.warning("[GateBlockScan] Could not parse InputJson: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Pure helper (no Bukkit dependency) so the size cap can be unit tested directly.
+     * @return an error message fragment if the scan is too large, or null if it's within limits
+     */
+    static String checkScanSizeLimit(long totalCells, Integer configuredScanMaxBlocks) {
+        int configuredCap = configuredScanMaxBlocks != null && configuredScanMaxBlocks > 0
+            ? configuredScanMaxBlocks : DEFAULT_SCAN_MAX_BLOCKS;
+        int effectiveCap = Math.min(configuredCap, ABSOLUTE_MAX_CELLS);
+
+        if (totalCells > effectiveCap) {
+            return "is too large: " + totalCells + " blocks exceeds the limit of " + effectiveCap
+                + ". Reduce GeometryWidth/Height/Depth or increase ScanMaxBlocks.";
         }
         return null;
     }

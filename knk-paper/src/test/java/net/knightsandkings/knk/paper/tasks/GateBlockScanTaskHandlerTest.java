@@ -41,6 +41,31 @@ class GateBlockScanTaskHandlerTest {
     }
 
     @Test
+    void testCheckScanSizeLimit_WithinConfiguredCap_ReturnsNull() {
+        assertNull(GateBlockScanTaskHandler.checkScanSizeLimit(400, 500));
+    }
+
+    @Test
+    void testCheckScanSizeLimit_ExceedsConfiguredCap_ReturnsMessage() {
+        String result = GateBlockScanTaskHandler.checkScanSizeLimit(600, 500);
+        assertNotNull(result);
+        assertTrue(result.contains("600"));
+        assertTrue(result.contains("500"));
+    }
+
+    @Test
+    void testCheckScanSizeLimit_NullConfiguredCap_FallsBackToDefault() {
+        assertNull(GateBlockScanTaskHandler.checkScanSizeLimit(500, null));
+        assertNotNull(GateBlockScanTaskHandler.checkScanSizeLimit(501, null));
+    }
+
+    @Test
+    void testCheckScanSizeLimit_ConfiguredCapAboveAbsoluteMax_IsClampedToAbsoluteMax() {
+        assertNotNull(GateBlockScanTaskHandler.checkScanSizeLimit(20001, 999999));
+        assertNull(GateBlockScanTaskHandler.checkScanSizeLimit(20000, 999999));
+    }
+
+    @Test
     void testSupports_OnlyGateBlockScan() {
         assertTrue(handler.supports("GateBlockScan"));
         assertFalse(handler.supports("Location"));
