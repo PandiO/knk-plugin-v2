@@ -10,7 +10,9 @@ import net.knightsandkings.knk.core.util.CoordinateParser;
 import org.bukkit.util.Vector;
 
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
 /**
@@ -29,6 +31,32 @@ public class GateLoaderAdapter {
 
     public GateLoaderAdapter(GateManager gateManager) {
         this.gateManager = gateManager;
+    }
+
+    /**
+     * Load every gate structure and its block snapshots into the runtime cache.
+     *
+     * @param gateStructuresApi API client used to retrieve gate data
+     * @return future completed after every gate has been cached
+     */
+    public CompletableFuture<Void> loadAll(net.knightsandkings.knk.api.GateStructuresApi gateStructuresApi) {
+        if (gateStructuresApi == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("GateStructuresApi is not configured"));
+        }
+
+        return gateStructuresApi.getAll().thenCompose(gates -> {
+            List<CompletableFuture<Void>> loads = new ArrayList<>();
+            for (GateStructureDto gate : gates == null ? List.<GateStructureDto>of() : gates) {
+                if (gate == null || gate.getId() == null) {
+                    continue;
+                }
+
+                loads.add(gateStructuresApi.getGateSnapshots(gate.getId())
+                    .thenAccept(snapshots -> loadAndCacheGate(gate, snapshots == null ? List.of() : snapshots)));
+            }
+
+            return CompletableFuture.allOf(loads.toArray(new CompletableFuture[0]));
+        });
     }
 
     /**
@@ -91,6 +119,7 @@ public class GateLoaderAdapter {
 
         gate.setRegionClosedId(dto.getRegionClosedId());
         gate.setRegionOpenedId(dto.getRegionOpenedId());
+        gate.setWorldName(CoordinateParser.parseWorldName(dto.getAnchorPoint()));
         gate.setCanRespawn(dto.getCanRespawn() != null ? dto.getCanRespawn() : true);
         gate.setRespawnRateSeconds(dto.getRespawnRateSeconds() != null ? dto.getRespawnRateSeconds() : 300);
 
@@ -186,10 +215,15 @@ public class GateLoaderAdapter {
      * Sorts by SortOrder to ensure stable block placement order.
      */
     private void loadBlockSnapshots(CachedGate gate, List<GateBlockSnapshotDto> snapshotDtos) {
-        // Sort by SortOrder
-        snapshotDtos.sort(Comparator.comparingInt(GateBlockSnapshotDto::sortOrder));
+        if (snapshotDtos == null || snapshotDtos.isEmpty()) {
+            LOGGER.warning("Gate " + gate.getName() + " (ID: " + gate.getId() + ") has no block snapshots; it cannot be animated.");
+            return;
+        }
 
-        for (GateBlockSnapshotDto dto : snapshotDtos) {
+        List<GateBlockSnapshotDto> sortedSnapshots = new ArrayList<>(snapshotDtos);
+        sortedSnapshots.sort(Comparator.comparingInt(GateBlockSnapshotDto::sortOrder));
+
+        for (GateBlockSnapshotDto dto : sortedSnapshots) {
             Vector relativePos = new Vector(
                 dto.relativeX() != null ? dto.relativeX() : 0,
                 dto.relativeY() != null ? dto.relativeY() : 0,
@@ -199,8 +233,8 @@ public class GateLoaderAdapter {
             BlockSnapshot snapshot = new BlockSnapshot(
                 dto.id(),
                 relativePos,
-                dto.minecraftBlockRefId() != null ? dto.minecraftBlockRefId() : 0,
-                dto.blockData() != null ? dto.blockData() : "",
+                0, // no minecraftBlockRefId in the API contract; block identity travels via blockData/materialName
+                resolveBlockData(dto),
                 dto.sortOrder() != null ? dto.sortOrder() : 0
             );
 
@@ -208,5 +242,16 @@ public class GateLoaderAdapter {
         }
 
         LOGGER.fine("Loaded " + gate.getBlocks().size() + " blocks for gate " + gate.getName());
+    }
+
+    /**
+     * Prefers the full Bukkit block-data string; falls back to the bare material name
+     * (GateBlockPlacer can still resolve a plain material via Material.matchMaterial).
+     */
+    private String resolveBlockData(GateBlockSnapshotDto dto) {
+        if (dto.blockDataJson() != null && !dto.blockDataJson().isBlank()) {
+            return dto.blockDataJson();
+        }
+        return dto.materialName() != null ? dto.materialName() : "";
     }
 }

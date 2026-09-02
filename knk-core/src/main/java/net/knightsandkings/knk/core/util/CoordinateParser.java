@@ -43,6 +43,25 @@ public class CoordinateParser {
     }
 
     /**
+     * Extract the Bukkit world name from an API location payload.
+     *
+     * @param json JSON location object
+     * @return world name, or an empty string when unavailable
+     */
+    public static String parseWorldName(String json) {
+        if (json == null || json.trim().isEmpty()) {
+            return "";
+        }
+
+        try {
+            JsonNode node = MAPPER.readTree(json);
+            return node.hasNonNull("world") ? node.get("world").asText("") : "";
+        } catch (JsonProcessingException e) {
+            return "";
+        }
+    }
+
+    /**
      * Parse an array of coordinates from JSON string.
      * Expected format: [{"x": 100, "y": 64, "z": 100}, {"x": 105, "y": 64, "z": 100}]
      *

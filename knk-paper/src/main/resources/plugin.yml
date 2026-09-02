@@ -26,10 +26,6 @@ commands:
     aliases: [customench]
     permission: customenchantments.command.use
 
-  gate:
-    description: Gate control and information commands
-    usage: /gate help
-    
 permissions:
   knk.admin:
     description: Access to KnK admin commands

@@ -47,8 +47,12 @@ import net.knightsandkings.knk.paper.config.ConfigLoader;
 import net.knightsandkings.knk.paper.config.KnkConfig;
 import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
+import net.knightsandkings.knk.paper.gates.GateLoaderAdapter;
+import net.knightsandkings.knk.paper.gates.GateAnimationTask;
+import net.knightsandkings.knk.paper.gates.HealthSystem;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
+import net.knightsandkings.knk.paper.listeners.GateEventListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
@@ -56,10 +60,13 @@ import net.knightsandkings.knk.paper.listeners.WorldGuardRegionListener;
 import net.knightsandkings.knk.paper.listeners.WorldTaskChatListener;
 import net.knightsandkings.knk.paper.listeners.WorldTaskLocationSelectionListener;
 import net.knightsandkings.knk.paper.regions.WorldGuardRegionTracker;
+import net.knightsandkings.knk.paper.integration.WorldGuardIntegration;
 import net.knightsandkings.knk.paper.tasks.TempRegionRetentionTask;
 import net.knightsandkings.knk.paper.tasks.WgRegionIdTaskHandler;
 import net.knightsandkings.knk.paper.tasks.LocationTaskHandler;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
+import net.knightsandkings.knk.paper.tasks.HeadlessWorldTaskPoller;
+import net.knightsandkings.knk.paper.tasks.GateBlockScanTaskHandler;
 import net.knightsandkings.knk.paper.user.UserManager;
 import net.knightsandkings.knk.paper.utils.CommandCooldownManager;
 
@@ -90,6 +97,7 @@ public class KnKPlugin extends JavaPlugin {
     private GateStructuresApi gateStructuresApi;
     private GateManager gateManager;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
+    private HeadlessWorldTaskPoller headlessWorldTaskPoller;
     private UserManager userManager;
     private ChatCaptureManager chatCaptureManager;
     private CommandCooldownManager cooldownManager;
@@ -157,10 +165,16 @@ public class KnKPlugin extends JavaPlugin {
             // Initialize GateManager (no-arg constructor for dependency injection flexibility)
             this.gateManager = new GateManager();
             getLogger().info("GateManager initialized");
-            
-            // TODO: Phase 8+ - Wire GateLoaderAdapter to load gates from API during startup
-            // GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
-            // adapter.loadGatesFromApi(gateStructuresApi);
+
+            GateLoaderAdapter gateLoader = new GateLoaderAdapter(gateManager);
+            gateManager.setReloadAction(() -> gateLoader.loadAll(gateStructuresApi));
+            gateManager.reloadGates().whenComplete((unused, error) -> {
+                if (error != null) {
+                    getLogger().warning("Failed to load gates from API: " + error.getMessage());
+                } else {
+                    getLogger().info("Loaded " + gateManager.getAllGates().size() + " gate(s) from API");
+                }
+            });
 
             
             // Initialize cache manager
@@ -228,6 +242,11 @@ public class KnKPlugin extends JavaPlugin {
             // Start temp region retention task (14 day retention policy)
             tempRegionRetentionTask = new TempRegionRetentionTask(this, 14);
             tempRegionRetentionTask.start();
+
+            // Start headless WorldTask poller (webapp-initiated tasks that need no player)
+            headlessWorldTaskPoller = new HeadlessWorldTaskPoller(worldTasksApi, this);
+            headlessWorldTaskPoller.registerHandler(new GateBlockScanTaskHandler(gateStructuresApi, worldTasksApi, this));
+            headlessWorldTaskPoller.start();
             
             getLogger().info("WorldTaskHandlerRegistry initialized with handlers");
             
@@ -305,6 +324,16 @@ public class KnKPlugin extends JavaPlugin {
                 true  // Enable console logging; set to false to disable
             );
             registerEvents(regionTracker);
+
+            HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this);
+            getServer().getPluginManager().registerEvents(new GateEventListener(gateManager, healthSystem), this);
+
+            WorldGuardIntegration worldGuardIntegration = new WorldGuardIntegration(this);
+            for (org.bukkit.World world : getServer().getWorlds()) {
+                new GateAnimationTask(gateManager, world, org.bukkit.Material.STONE, worldGuardIntegration)
+                    .runTaskTimer(this, 1L, 1L);
+            }
+            getLogger().info("Registered gate event listener and animation tasks for " + getServer().getWorlds().size() + " world(s)");
             
             // Register task event listeners (wired after handler registration)
             var retrievedWgRegionHandler = (WgRegionIdTaskHandler) 
@@ -344,6 +373,9 @@ public class KnKPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (headlessWorldTaskPoller != null) {
+            headlessWorldTaskPoller.stop();
+        }
         if (tempRegionRetentionTask != null) {
             tempRegionRetentionTask.stop();
         }
@@ -413,6 +445,8 @@ public class KnKPlugin extends JavaPlugin {
                 cacheManager,
                 worldTasksApi,
                 worldTaskHandlerRegistry,
+                gateManager,
+                gateStructuresApi,
                 serverId
             );
             knkCommand.setExecutor(knkAdminCommand);

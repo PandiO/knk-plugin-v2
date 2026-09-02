@@ -15,6 +15,8 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -41,6 +43,7 @@ public class GateAnimationTask extends BukkitRunnable {
     
     private long lastLagCheck = 0;
     private boolean isLagging = false;
+    private final Set<Integer> emptySnapshotWarnings = new HashSet<>();
 
     /**
      * Create a new gate animation task.
@@ -56,6 +59,7 @@ public class GateAnimationTask extends BukkitRunnable {
         this.world = world;
         this.fallbackMaterial = fallbackMaterial != null ? fallbackMaterial : Material.STONE;
         this.worldGuardIntegration = worldGuardIntegration;
+        LOGGER.info("[GateAnimation] Scheduled animation task for world '" + world.getName() + "'");
     }
 
     @Override
@@ -67,16 +71,30 @@ public class GateAnimationTask extends BukkitRunnable {
         Map<Integer, CachedGate> gates = gateManager.getAllGates();
 
         for (CachedGate gate : gates.values()) {
+            if (!gate.getWorldName().isBlank() && !gate.getWorldName().equals(world.getName())) {
+                continue;
+            }
+
             AnimationState state = gate.getCurrentState();
 
             // Only process gates that are animating
             if (state != AnimationState.OPENING && state != AnimationState.CLOSING) {
+                emptySnapshotWarnings.remove(gate.getId());
                 continue;
             }
 
             // Skip if gate is inactive or destroyed
             if (!gate.isActive() || gate.isDestroyed()) {
+                LOGGER.warning("[GateAnimation] Skipping gate '" + gate.getName() + "' (ID: " + gate.getId()
+                    + ") because it is " + (!gate.isActive() ? "inactive" : "destroyed") + ".");
                 continue;
+            }
+
+            if (gate.getBlocks().isEmpty()) {
+                if (emptySnapshotWarnings.add(gate.getId())) {
+                    LOGGER.warning("[GateAnimation] Gate '" + gate.getName() + "' (ID: " + gate.getId()
+                        + ") has no block snapshots. State will complete but no blocks can be animated.");
+                }
             }
 
             // Calculate current frame based on elapsed time
@@ -98,6 +116,11 @@ public class GateAnimationTask extends BukkitRunnable {
 
             // Update gate's current frame
             gate.setCurrentFrame(currentFrame);
+
+            if (currentFrame == 0 || currentFrame == totalFrames || currentFrame % 20 == 0) {
+                LOGGER.info("[GateAnimation] Gate '" + gate.getName() + "' (ID: " + gate.getId() + ") "
+                    + state + " frame " + currentFrame + "/" + totalFrames + " in world '" + world.getName() + "'.");
+            }
 
             // Check if animation should update this frame
             if (!GateFrameCalculator.shouldUpdateFrame(gate, currentFrame)) {
@@ -133,9 +156,21 @@ public class GateAnimationTask extends BukkitRunnable {
      * @param frame The current animation frame
      */
     private void updateGateBlocks(CachedGate gate, int frame) {
+        if (gate == null || gate.getBlocks() == null) {
+            return;
+        }
+
         for (BlockSnapshot block : gate.getBlocks()) {
+            if (block == null) {
+                continue;
+            }
+
             // Calculate world position for this block at this frame
             Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, block, frame);
+
+            if (worldPos == null) {
+                continue;
+            }
 
             // Check if chunk is loaded
             if (!GateBlockPlacer.isChunkLoaded(world, worldPos)) {
@@ -144,14 +179,16 @@ public class GateAnimationTask extends BukkitRunnable {
                 return;
             }
 
-            // Place or remove block based on frame
-            if (shouldBlockExist(gate, frame)) {
-                // Place block
-                GateBlockPlacer.placeBlock(world, worldPos, block.getBlockData(), fallbackMaterial);
-            } else {
-                // Remove block (opening animation)
-                GateBlockPlacer.removeBlock(world, worldPos);
+            int previousFrame = gate.getCurrentState() == AnimationState.OPENING
+                ? Math.max(0, frame - Math.max(1, gate.getAnimationTickRate()))
+                : Math.min(gate.getAnimationDurationTicks(), frame + Math.max(1, gate.getAnimationTickRate()));
+            Vector previousPosition = GateFrameCalculator.calculateBlockPosition(gate, block, previousFrame);
+
+            if (previousPosition != null && !previousPosition.equals(worldPos)) {
+                GateBlockPlacer.removeBlock(world, previousPosition);
             }
+
+            GateBlockPlacer.placeBlock(world, worldPos, block.getBlockData(), fallbackMaterial);
         }
     }
 
@@ -176,28 +213,6 @@ public class GateAnimationTask extends BukkitRunnable {
     }
 
     /**
-     * Determine if a block should exist at a given frame.
-     * For opening gates, blocks are removed gradually.
-     * For closing gates, blocks are placed gradually.
-     * 
-     * @param gate The gate
-     * @param frame Current frame
-     * @return True if block should be placed
-     */
-    private boolean shouldBlockExist(CachedGate gate, int frame) {
-        AnimationState state = gate.getCurrentState();
-
-        if (state == AnimationState.OPENING) {
-            // Opening: blocks exist until we reach their removal frame
-            // For simplicity, remove all blocks at frame > 0
-            return frame == 0;
-        } else {
-            // Closing: blocks are placed as we go
-            return true;
-        }
-    }
-
-    /**
      * Finish opening animation for a gate.
      * Syncs WorldGuard regions based on new state.
      * 
@@ -207,14 +222,8 @@ public class GateAnimationTask extends BukkitRunnable {
         gate.setCurrentState(AnimationState.OPEN);
         gate.setCurrentFrame(gate.getAnimationDurationTicks());
 
-        // Remove all gate blocks (gate is now open)
-        for (BlockSnapshot block : gate.getBlocks()) {
-            Vector worldPos = gate.getAnchorPoint().clone().add(block.getRelativePosition());
-            worldPos.add(gate.getMotionVector()); // Move to final open position
-            GateBlockPlacer.removeBlock(world, worldPos);
-        }
-
         LOGGER.info("Gate " + gate.getName() + " finished opening");
+        gateManager.notifyAnimationCompleted(gate.getId(), AnimationState.OPEN);
 
         // Sync WorldGuard regions
         if (worldGuardIntegration != null) {
@@ -234,11 +243,16 @@ public class GateAnimationTask extends BukkitRunnable {
 
         // Ensure all gate blocks are placed at closed position
         for (BlockSnapshot block : gate.getBlocks()) {
+            if (block == null) {
+                continue;
+            }
+
             Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, block, 0);
             GateBlockPlacer.placeBlock(world, worldPos, block.getBlockData(), fallbackMaterial);
         }
 
         LOGGER.info("Gate " + gate.getName() + " finished closing");
+        gateManager.notifyAnimationCompleted(gate.getId(), AnimationState.CLOSED);
 
         // Sync WorldGuard regions
         if (worldGuardIntegration != null) {

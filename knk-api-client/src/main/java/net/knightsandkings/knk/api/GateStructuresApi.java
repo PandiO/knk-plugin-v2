@@ -42,6 +42,8 @@ public interface GateStructuresApi {
      */
     CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed);
 
+    CompletableFuture<Void> updateOperationalSettings(int id, boolean isActive, boolean isInvincible);
+
     /**
      * Get all block snapshots for a specific gate.
      * Calls GET /api/GateStructures/{id}/snapshots

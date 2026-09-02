@@ -1,5 +1,6 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
@@ -23,6 +24,7 @@ import static org.mockito.Mockito.*;
 class GateCommandTest {
     private GateCommand gateCommand;
     private GateManager mockGateManager;
+    private GateStructuresApi mockGateStructuresApi;
     private CommandSender mockSender;
     private Player mockPlayer;
     private List<String> sentMessages;
@@ -30,7 +32,8 @@ class GateCommandTest {
     @BeforeEach
     void setUp() {
         mockGateManager = mock(GateManager.class);
-        gateCommand = new GateCommand(mockGateManager);
+        mockGateStructuresApi = mock(GateStructuresApi.class);
+        gateCommand = new GateCommand(mockGateManager, mockGateStructuresApi);
         mockSender = mock(CommandSender.class);
         mockPlayer = mock(Player.class);
         sentMessages = new ArrayList<>();
@@ -49,6 +52,8 @@ class GateCommandTest {
         // Default permissions
         when(mockSender.hasPermission(anyString())).thenReturn(true);
         when(mockPlayer.hasPermission(anyString())).thenReturn(true);
+        when(mockGateStructuresApi.updateOperationalSettings(anyInt(), anyBoolean(), anyBoolean()))
+            .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
     }
 
     // ===== Player Commands =====
@@ -64,6 +69,46 @@ class GateCommandTest {
         assertTrue(result);
         assertTrue(sentMessages.stream().anyMatch(m -> m.contains("Opening gate")));
         assertTrue(sentMessages.stream().anyMatch(m -> m.contains("TestGate")));
+        verify(mockGateManager).openGate(1);
+        verify(mockGateManager).setAnimationCompletionCallback(eq(1), any());
+    }
+
+    @Test
+    void testExecuteOpen_ResolvesGateById() {
+        CachedGate gate = createTestGate(10, "Keep Gate", true, false);
+        when(mockGateManager.getGate(10)).thenReturn(gate);
+        when(mockGateManager.openGate(10)).thenReturn(true);
+
+        boolean result = gateCommand.executeOpen(mockSender, new String[]{"10"});
+
+        assertTrue(result);
+        verify(mockGateManager).getGate(10);
+        verify(mockGateManager).openGate(10);
+    }
+
+    @Test
+    void testExecuteOpen_ResolvesMultiWordGateName() {
+        CachedGate gate = createTestGate(10, "Keep Gate Test", true, false);
+        when(mockGateManager.getGateByName("Keep Gate Test")).thenReturn(gate);
+        when(mockGateManager.openGate(10)).thenReturn(true);
+
+        boolean result = gateCommand.executeOpen(mockSender, new String[]{"Keep", "Gate", "Test"});
+
+        assertTrue(result);
+        verify(mockGateManager).getGateByName("Keep Gate Test");
+        verify(mockGateManager).openGate(10);
+    }
+
+    @Test
+    void testOnCommand_DelegatesOpen() {
+        CachedGate gate = createTestGate(1, "TestGate", true, false);
+        when(mockGateManager.getGateByName("TestGate")).thenReturn(gate);
+        when(mockGateManager.openGate(1)).thenReturn(true);
+
+        boolean result = gateCommand.onCommand(mockSender, null, "gate", new String[]{"open", "TestGate"});
+
+        assertTrue(result);
+        assertTrue(sentMessages.stream().anyMatch(m -> m.contains("Opening gate")));
         verify(mockGateManager).openGate(1);
     }
 
@@ -122,6 +167,7 @@ class GateCommandTest {
         assertTrue(result);
         assertTrue(sentMessages.stream().anyMatch(m -> m.contains("Closing gate")));
         verify(mockGateManager).closeGate(1);
+        verify(mockGateManager).setAnimationCompletionCallback(eq(1), any());
     }
 
     @Test
@@ -160,6 +206,42 @@ class GateCommandTest {
         assertTrue(result);
         assertEquals(250.0, gate.getHealthCurrent());
         assertTrue(sentMessages.stream().anyMatch(m -> m.contains("health to 250")));
+    }
+
+    @Test
+    void testExecuteAdminHealth_ResolvesMultiWordGateName() {
+        CachedGate gate = createTestGate(10, "Keep Gate Test", true, false);
+        when(mockGateManager.getGateByName("Keep Gate Test")).thenReturn(gate);
+
+        boolean result = gateCommand.executeAdminHealth(mockSender, new String[]{"Keep", "Gate", "Test", "250"});
+
+        assertTrue(result);
+        assertEquals(250.0, gate.getHealthCurrent());
+        verify(mockGateManager).getGateByName("Keep Gate Test");
+    }
+
+    @Test
+    void testExecuteAdminToggleActive_PersistsChangeById() {
+        CachedGate gate = createTestGate(11, "Keep Gate Test", false, false);
+        when(mockGateManager.getGate(11)).thenReturn(gate);
+
+        boolean result = gateCommand.executeAdminToggleActive(mockSender, new String[]{"11"});
+
+        assertTrue(result);
+        assertTrue(gate.isActive());
+        verify(mockGateStructuresApi).updateOperationalSettings(11, true, true);
+    }
+
+    @Test
+    void testExecuteAdminToggleInvincible_ResolvesMultiWordName() {
+        CachedGate gate = createTestGate(11, "Keep Gate Test", true, false);
+        when(mockGateManager.getGateByName("Keep Gate Test")).thenReturn(gate);
+
+        boolean result = gateCommand.executeAdminToggleInvincible(mockSender, new String[]{"Keep", "Gate", "Test"});
+
+        assertTrue(result);
+        assertFalse(gate.isInvincible());
+        verify(mockGateStructuresApi).updateOperationalSettings(11, true, false);
     }
 
     @Test

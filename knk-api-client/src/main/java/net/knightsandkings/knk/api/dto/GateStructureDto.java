@@ -1,7 +1,13 @@
 package net.knightsandkings.knk.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -74,12 +80,15 @@ public class GateStructureDto {
 
     // === PLANE_GRID Geometry ===
     @JsonProperty("anchorPoint")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
     private String anchorPoint;
 
     @JsonProperty("referencePoint1")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
     private String referencePoint1;
 
     @JsonProperty("referencePoint2")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
     private String referencePoint2;
 
     @JsonProperty("geometryWidth")
@@ -122,13 +131,16 @@ public class GateStructureDto {
     private Integer rotationMaxAngleDegrees;
 
     @JsonProperty("hingeAxis")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
     private String hingeAxis;
 
     // === Double Doors ===
     @JsonProperty("leftDoorSeedBlock")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
     private String leftDoorSeedBlock;
 
     @JsonProperty("rightDoorSeedBlock")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
     private String rightDoorSeedBlock;
 
     @JsonProperty("mirrorRotation")
@@ -473,5 +485,13 @@ public class GateStructureDto {
 
     public void setBlockSnapshots(List<GateBlockSnapshotDto> blockSnapshots) {
         this.blockSnapshots = blockSnapshots;
+    }
+
+    public static class CoordinateStringDeserializer extends JsonDeserializer<String> {
+        @Override
+        public String deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            JsonNode value = parser.readValueAsTree();
+            return value.isTextual() ? value.asText() : value.toString();
+        }
     }
 }

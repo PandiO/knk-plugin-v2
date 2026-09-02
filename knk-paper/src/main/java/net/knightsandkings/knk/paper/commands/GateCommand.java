@@ -1,26 +1,105 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.util.Vector;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Gate command implementation providing player and admin gate control.
  * Supports opening/closing, status, listing, and admin operations.
  */
-public class GateCommand {
+public class GateCommand implements CommandExecutor {
     private final GateManager gateManager;
+    private final GateStructuresApi gateStructuresApi;
 
-    public GateCommand(GateManager gateManager) {
+    public GateCommand(GateManager gateManager, GateStructuresApi gateStructuresApi) {
         this.gateManager = gateManager;
+        this.gateStructuresApi = gateStructuresApi;
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args == null || args.length == 0) {
+            sendHelp(sender);
+            return true;
+        }
+
+        String subcommand = args[0].toLowerCase();
+        String[] subArgs = Arrays.copyOfRange(args, 1, args.length);
+
+        return switch (subcommand) {
+            case "open" -> executeOpen(sender, subArgs);
+            case "close" -> executeClose(sender, subArgs);
+            case "info" -> executeInfo(sender, subArgs);
+            case "list" -> executeList(sender, subArgs);
+            case "admin" -> executeAdmin(sender, subArgs);
+            case "help", "?" -> {
+                sendHelp(sender);
+                yield true;
+            }
+            default -> {
+                sender.sendMessage(ChatColor.RED + "Unknown gate subcommand: " + args[0]);
+                sendHelp(sender);
+                yield true;
+            }
+        };
+    }
+
+    private void sendHelp(CommandSender sender) {
+        sender.sendMessage(ChatColor.GOLD + "━━━ Gate Commands ━━━");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate open <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate close <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate info <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate list");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin health <name|id> <amount>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin repair <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin tp <name|id>");
+    }
+
+    private boolean executeAdmin(CommandSender sender, String[] args) {
+        if (args.length == 0) {
+            sendAdminHelp(sender);
+            return true;
+        }
+
+        String action = args[0].toLowerCase();
+        String[] subArgs = Arrays.copyOfRange(args, 1, args.length);
+
+        return switch (action) {
+            case "health" -> executeAdminHealth(sender, subArgs);
+            case "repair" -> executeAdminRepair(sender, subArgs);
+            case "tp" -> executeAdminTeleport(sender, subArgs);
+            case "reload" -> executeAdminReload(sender, subArgs);
+            case "active" -> executeAdminToggleActive(sender, subArgs);
+            case "invincible" -> executeAdminToggleInvincible(sender, subArgs);
+            default -> {
+                sender.sendMessage(ChatColor.RED + "Unknown admin gate action: " + args[0]);
+                sendAdminHelp(sender);
+                yield true;
+            }
+        };
+    }
+
+    private void sendAdminHelp(CommandSender sender) {
+        sender.sendMessage(ChatColor.GOLD + "━━━ Gate Admin Commands ━━━");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin reload");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin health <name|id> <amount>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin repair <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin tp <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin active <name|id>");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate admin invincible <name|id>");
     }
 
     /**
@@ -28,12 +107,12 @@ public class GateCommand {
      */
     public boolean executeOpen(CommandSender sender, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /gate open <name>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate open <name|id>");
             return true;
         }
 
         String gateName = String.join(" ", args);
-        CachedGate gate = gateManager.getGateByName(gateName);
+        CachedGate gate = findGate(gateName);
 
         if (gate == null) {
             sender.sendMessage(ChatColor.RED + "Gate '" + gateName + "' not found.");
@@ -61,6 +140,9 @@ public class GateCommand {
 
         // Try to open
         if (gateManager.openGate(gate.getId())) {
+            gateManager.setAnimationCompletionCallback(gate.getId(), state ->
+                sender.sendMessage(ChatColor.GREEN + "Gate '" + gate.getName() + "' is now " + state + ".")
+            );
             sender.sendMessage(ChatColor.GREEN + "Opening gate '" + gateName + "'...");
             return true;
         } else {
@@ -74,12 +156,12 @@ public class GateCommand {
      */
     public boolean executeClose(CommandSender sender, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /gate close <name>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate close <name|id>");
             return true;
         }
 
         String gateName = String.join(" ", args);
-        CachedGate gate = gateManager.getGateByName(gateName);
+        CachedGate gate = findGate(gateName);
 
         if (gate == null) {
             sender.sendMessage(ChatColor.RED + "Gate '" + gateName + "' not found.");
@@ -101,6 +183,9 @@ public class GateCommand {
 
         // Try to close
         if (gateManager.closeGate(gate.getId())) {
+            gateManager.setAnimationCompletionCallback(gate.getId(), state ->
+                sender.sendMessage(ChatColor.GREEN + "Gate '" + gate.getName() + "' is now " + state + ".")
+            );
             sender.sendMessage(ChatColor.GREEN + "Closing gate '" + gateName + "'...");
             return true;
         } else {
@@ -114,12 +199,12 @@ public class GateCommand {
      */
     public boolean executeInfo(CommandSender sender, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /gate info <name>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate info <name|id>");
             return true;
         }
 
         String gateName = String.join(" ", args);
-        CachedGate gate = gateManager.getGateByName(gateName);
+        CachedGate gate = findGate(gateName);
 
         if (gate == null) {
             sender.sendMessage(ChatColor.RED + "Gate '" + gateName + "' not found.");
@@ -155,21 +240,21 @@ public class GateCommand {
         }
 
         List<CachedGate> gates = gateManager.getAllGates().values().stream()
-            .filter(gate -> senderLoc == null || gate.getAnchorPoint().distance(senderLoc.toVector()) <= 50)
-            .collect(Collectors.toList());
+            .sorted(Comparator.comparingInt(CachedGate::getId))
+            .toList();
 
         if (gates.isEmpty()) {
-            sender.sendMessage(ChatColor.YELLOW + "No gates nearby.");
+            sender.sendMessage(ChatColor.YELLOW + "No gates are loaded. Use /knk gate admin reload after confirming API connectivity.");
             return true;
         }
 
-        sender.sendMessage(ChatColor.GOLD + "━━━ Nearby Gates ━━━");
+        sender.sendMessage(ChatColor.GOLD + "━━━ Gates ━━━");
         for (CachedGate gate : gates) {
             String statusColor = gate.getCurrentState() == AnimationState.OPEN ? ChatColor.GREEN.toString() : ChatColor.RED.toString();
             String distanceStr = senderLoc != null ? 
                 String.format(" (%.0fm)", gate.getAnchorPoint().distance(senderLoc.toVector())) : "";
             
-            sender.sendMessage(ChatColor.AQUA + "• " + gate.getName() + 
+                sender.sendMessage(ChatColor.AQUA + "#" + gate.getId() + " " + gate.getName() +
                     ChatColor.GRAY + " [" + gate.getGateType() + "]" +
                     statusColor + " " + gate.getCurrentState() + distanceStr);
         }
@@ -208,12 +293,12 @@ public class GateCommand {
         }
 
         if (args.length < 2) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /gate admin health <name> <amount>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate admin health <name|id> <amount>");
             return true;
         }
 
-        String gateName = args[0];
-        CachedGate gate = gateManager.getGateByName(gateName);
+        String gateName = String.join(" ", Arrays.copyOf(args, args.length - 1));
+        CachedGate gate = findGate(gateName);
 
         if (gate == null) {
             sender.sendMessage(ChatColor.RED + "Gate '" + gateName + "' not found.");
@@ -221,12 +306,12 @@ public class GateCommand {
         }
 
         try {
-            double amount = Double.parseDouble(args[1]);
+            double amount = Double.parseDouble(args[args.length - 1]);
             gate.setHealthCurrent(Math.max(0, Math.min(amount, gate.getHealthMax())));
             sender.sendMessage(ChatColor.GREEN + "Set gate health to " + gate.getHealthCurrent());
             return true;
         } catch (NumberFormatException e) {
-            sender.sendMessage(ChatColor.RED + "Invalid health value: " + args[1]);
+            sender.sendMessage(ChatColor.RED + "Invalid health value: " + args[args.length - 1]);
             return true;
         }
     }
@@ -241,12 +326,12 @@ public class GateCommand {
         }
 
         if (args.length < 1) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /gate admin repair <name>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate admin repair <name|id>");
             return true;
         }
 
-        String gateName = args[0];
-        CachedGate gate = gateManager.getGateByName(gateName);
+        String gateName = String.join(" ", args);
+        CachedGate gate = findGate(gateName);
 
         if (gate == null) {
             sender.sendMessage(ChatColor.RED + "Gate '" + gateName + "' not found.");
@@ -276,12 +361,12 @@ public class GateCommand {
         }
 
         if (args.length < 1) {
-            sender.sendMessage(ChatColor.YELLOW + "Usage: /gate admin tp <name>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate admin tp <name|id>");
             return true;
         }
 
-        String gateName = args[0];
-        CachedGate gate = gateManager.getGateByName(gateName);
+        String gateName = String.join(" ", args);
+        CachedGate gate = findGate(gateName);
 
         if (gate == null) {
             sender.sendMessage(ChatColor.RED + "Gate '" + gateName + "' not found.");
@@ -301,11 +386,73 @@ public class GateCommand {
         return true;
     }
 
+    public boolean executeAdminToggleActive(CommandSender sender, String[] args) {
+        CachedGate gate = findAdminGate(sender, args, "active");
+        if (gate == null) {
+            return true;
+        }
+
+        gate.setIsActive(!gate.isActive());
+        persistOperationalSettings(gate);
+        sender.sendMessage(ChatColor.GREEN + "Gate '" + gate.getName() + "' active: " + gate.isActive());
+        return true;
+    }
+
+    public boolean executeAdminToggleInvincible(CommandSender sender, String[] args) {
+        CachedGate gate = findAdminGate(sender, args, "invincible");
+        if (gate == null) {
+            return true;
+        }
+
+        gate.setIsInvincible(!gate.isInvincible());
+        persistOperationalSettings(gate);
+        sender.sendMessage(ChatColor.GREEN + "Gate '" + gate.getName() + "' invincible: " + gate.isInvincible());
+        return true;
+    }
+
     /**
      * Check if sender has a permission.
      */
     private boolean checkPermission(CommandSender sender, String permission) {
         return sender.hasPermission(permission);
+    }
+
+    private CachedGate findAdminGate(CommandSender sender, String[] args, String settingName) {
+        if (!sender.hasPermission("knk.gate.admin")) {
+            sender.sendMessage(ChatColor.RED + "You don't have permission to use this command.");
+            return null;
+        }
+        if (args.length == 0) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate admin " + settingName + " <name|id>");
+            return null;
+        }
+
+        String selector = String.join(" ", args);
+        CachedGate gate = findGate(selector);
+        if (gate == null) {
+            sender.sendMessage(ChatColor.RED + "Gate '" + selector + "' not found.");
+        }
+        return gate;
+    }
+
+    private void persistOperationalSettings(CachedGate gate) {
+        if (gateStructuresApi == null) {
+            return;
+        }
+
+        gateStructuresApi.updateOperationalSettings(gate.getId(), gate.isActive(), gate.isInvincible())
+            .exceptionally(error -> {
+                gateManager.reloadGates();
+                return null;
+            });
+    }
+
+    private CachedGate findGate(String nameOrId) {
+        try {
+            return gateManager.getGate(Integer.parseInt(nameOrId));
+        } catch (NumberFormatException ignored) {
+            return gateManager.getGateByName(nameOrId);
+        }
     }
 
     /**

@@ -17,6 +17,7 @@ public class CachedGate {
     private final String motionType;
     private final String geometryDefinitionMode;
     private final String faceDirection;
+    private String worldName;
 
     // === Animation State (mutable) ===
     private AnimationState currentState;
@@ -75,6 +76,7 @@ public class CachedGate {
         this.motionType = motionType;
         this.geometryDefinitionMode = geometryDefinitionMode;
         this.faceDirection = faceDirection;
+        this.worldName = "";
         this.animationDurationTicks = animationDurationTicks;
         this.animationTickRate = animationTickRate;
         this.anchorPoint = anchorPoint;
@@ -122,6 +124,10 @@ public class CachedGate {
 
     public String getFaceDirection() {
         return faceDirection;
+    }
+
+    public String getWorldName() {
+        return worldName;
     }
 
     public AnimationState getCurrentState() {
@@ -280,6 +286,10 @@ public class CachedGate {
 
     public void setRespawnScheduledTime(long respawnScheduledTime) {
         this.respawnScheduledTime = respawnScheduledTime;
+    }
+
+    public void setWorldName(String worldName) {
+        this.worldName = worldName != null ? worldName : "";
     }
 
     // === Setters for Precomputed Data ===

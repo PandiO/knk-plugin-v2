@@ -1,6 +1,7 @@
 package net.knightsandkings.knk.api.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.dto.GateBlockSnapshotDto;
@@ -138,13 +139,45 @@ public class GateStructuresApiImpl extends BaseApiImpl implements GateStructures
     }
 
     @Override
+    public CompletableFuture<Void> updateOperationalSettings(int id, boolean isActive, boolean isInvincible) {
+        return CompletableFuture.supplyAsync(() -> {
+            String url = baseUrl + GATE_STRUCTURES_ENDPOINT + "/" + id + "/operational-settings";
+
+            try {
+                Map<String, Boolean> payload = new HashMap<>();
+                payload.put("isActive", isActive);
+                payload.put("isInvincible", isInvincible);
+                String json = objectMapper.writeValueAsString(payload);
+                Request request = newRequest(url)
+                    .addHeader("Content-Type", "application/json")
+                    .put(RequestBody.create(json, MediaType.get("application/json")))
+                    .build();
+                execute(request, url);
+                return null;
+            } catch (ApiException e) {
+                throw e;
+            } catch (IOException e) {
+                ApiException apiEx = new ApiException(url, 0, "IO error updating gate operational settings",
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+                apiEx.initCause(e);
+                throw apiEx;
+            }
+        }, executor);
+    }
+
+    @Override
     public CompletableFuture<List<GateBlockSnapshotDto>> getGateSnapshots(int gateId) {
         return CompletableFuture.supplyAsync(() -> {
             String url = baseUrl + GATE_STRUCTURES_ENDPOINT + "/" + gateId + "/snapshots";
             
             try {
                 String responseBody = get(url);
-                return objectMapper.readValue(responseBody, new TypeReference<List<GateBlockSnapshotDto>>() {});
+                JsonNode response = objectMapper.readTree(responseBody);
+                JsonNode snapshots = response.isArray() ? response : response.path("value");
+                if (!snapshots.isArray()) {
+                    throw new IOException("Expected an array or an object containing a value array");
+                }
+                return objectMapper.convertValue(snapshots, new TypeReference<List<GateBlockSnapshotDto>>() {});
             } catch (ApiException e) {
                 throw e;
             } catch (IOException e) {

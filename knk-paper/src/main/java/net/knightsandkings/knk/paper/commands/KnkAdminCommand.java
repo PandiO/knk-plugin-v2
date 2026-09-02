@@ -12,6 +12,8 @@ import net.knightsandkings.knk.core.ports.api.TownsQueryApi;
 import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
+import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.cache.CacheManager;
 import org.bukkit.NamespacedKey;
@@ -71,6 +73,8 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
             CacheManager cacheManager,
             WorldTasksApi worldTasksApi,
             WorldTaskHandlerRegistry worldTaskHandlerRegistry,
+            GateManager gateManager,
+            GateStructuresApi gateStructuresApi,
             String serverId
     ) {
                 this.plugin = plugin;
@@ -248,6 +252,13 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                 new CommandMetadata("task-status", "Check world task status", "/knk task-status <id|linkCode>", "knk.tasks",
                         List.of("/knk task-status 1", "/knk task-status ABC123")),
                 (sender, args) -> taskStatusCommand.onCommand(sender, null, "knk", args)
+        );
+
+        GateCommand gateCommand = new GateCommand(gateManager, gateStructuresApi);
+        registry.register(
+                new CommandMetadata("gate", "Control and inspect gate structures", "/knk gate <open|close|info|list|admin>", null,
+                        List.of("/knk gate list", "/knk gate info <name>", "/knk gate open <name>")),
+                (sender, args) -> gateCommand.onCommand(sender, null, "knk", args)
         );
         
         // Register help

@@ -64,6 +64,11 @@ public class GateEventListener implements Listener {
             Component.text("You cannot break gate blocks. Gate: " + gate.getName())
                 .color(NamedTextColor.RED)
         );
+
+        // Gate damage should not be bypassed by block breaking; keep gate integrity in sync.
+        if (!gate.isInvincible()) {
+            healthSystem.applyDamage(gate, 10.0);
+        }
     }
 
     /**

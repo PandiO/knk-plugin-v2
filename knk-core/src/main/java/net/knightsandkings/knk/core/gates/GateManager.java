@@ -6,6 +6,9 @@ import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 /**
@@ -17,9 +20,12 @@ public class GateManager {
     private static final Logger LOGGER = Logger.getLogger(GateManager.class.getName());
 
     private final Map<Integer, CachedGate> gateCache;
+    private final Map<Integer, Consumer<AnimationState>> animationCompletionCallbacks;
+    private Supplier<CompletableFuture<Void>> reloadAction;
 
     public GateManager() {
         this.gateCache = new HashMap<>();
+        this.animationCompletionCallbacks = new ConcurrentHashMap<>();
     }
 
     /**
@@ -30,11 +36,46 @@ public class GateManager {
      * @return CompletableFuture that completes when gates are reloaded
      */
     public CompletableFuture<Void> loadGatesFromApi() {
-        // Actual loading is delegated to framework layer adapters
-        // This method exists for backwards compatibility and can be called
-        // by framework initialization code
-        LOGGER.info("Gate loading delegated to framework adapters");
-        return CompletableFuture.completedFuture(null);
+        if (reloadAction == null) {
+            LOGGER.warning("No gate loader has been configured");
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return reloadAction.get();
+    }
+
+    /**
+     * Configure the framework-owned loader used for startup and admin reloads.
+     *
+     * @param reloadAction asynchronous loader which refreshes the runtime cache
+     */
+    public void setReloadAction(Supplier<CompletableFuture<Void>> reloadAction) {
+        this.reloadAction = reloadAction;
+    }
+
+    /**
+     * Register the one-shot callback that receives the terminal animation state.
+     *
+     * @param gateId gate being animated
+     * @param callback invoked with OPEN or CLOSED when animation finishes
+     */
+    public void setAnimationCompletionCallback(int gateId, Consumer<AnimationState> callback) {
+        if (callback != null) {
+            animationCompletionCallbacks.put(gateId, callback);
+        }
+    }
+
+    /**
+     * Notify and remove the callback associated with a completed gate animation.
+     *
+     * @param gateId completed gate ID
+     * @param state terminal animation state
+     */
+    public void notifyAnimationCompleted(int gateId, AnimationState state) {
+        Consumer<AnimationState> callback = animationCompletionCallbacks.remove(gateId);
+        if (callback != null) {
+            callback.accept(state);
+        }
     }
 
     /**
@@ -96,8 +137,7 @@ public class GateManager {
      * @return CompletableFuture that completes when reload is done
      */
     public CompletableFuture<Void> reloadGates() {
-        gateCache.clear();
-        LOGGER.info("Cleared gate cache, reloading from API...");
+        LOGGER.info("Reloading gates from API...");
         return loadGatesFromApi();
     }
 

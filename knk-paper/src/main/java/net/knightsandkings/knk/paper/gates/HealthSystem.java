@@ -51,6 +51,11 @@ public class HealthSystem {
             return;
         }
 
+        if (gate.isDestroyed()) {
+            LOGGER.fine("Gate '" + gate.getName() + "' is already destroyed, ignoring damage.");
+            return;
+        }
+
         // Skip if invincible
         if (gate.isInvincible()) {
             LOGGER.info("Gate '" + gate.getName() + "' is invincible, ignoring damage");
@@ -95,6 +100,10 @@ public class HealthSystem {
 
         // Remove all gate blocks from the world
         removeGateBlocks(gate);
+
+        // Ensure a destroyed gate does not remain in an animating or open state.
+        gate.setCurrentState(AnimationState.CLOSED);
+        gate.setCurrentFrame(0);
 
         // Persist destruction to API
         persistGateState(gate);
@@ -201,6 +210,9 @@ public class HealthSystem {
         gate.setAnimationStartTime(0);
         gate.setHealthCurrent(gate.getHealthMax());
         gate.setRespawnScheduledTime(0);
+        gate.setIsActive(true);
+        gate.setCurrentState(AnimationState.CLOSED);
+        gate.setCurrentFrame(0);
 
         restoreGateBlocks(gate);
 
