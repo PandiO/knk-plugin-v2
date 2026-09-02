@@ -49,6 +49,7 @@ import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.gates.GateLoaderAdapter;
 import net.knightsandkings.knk.paper.gates.GateAnimationTask;
+import net.knightsandkings.knk.paper.gates.GateStateSyncTask;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
@@ -96,6 +97,7 @@ public class KnKPlugin extends JavaPlugin {
     private WorldTasksApi worldTasksApi;
     private GateStructuresApi gateStructuresApi;
     private GateManager gateManager;
+    private GateStateSyncTask gateStateSyncTask;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private HeadlessWorldTaskPoller headlessWorldTaskPoller;
     private UserManager userManager;
@@ -168,11 +170,19 @@ public class KnKPlugin extends JavaPlugin {
 
             GateLoaderAdapter gateLoader = new GateLoaderAdapter(gateManager);
             gateManager.setReloadAction(() -> gateLoader.loadAll(gateStructuresApi));
+
+            int gateStateSyncIntervalSeconds = getConfig().getInt("gates.state-sync-interval-seconds", 120);
+            this.gateStateSyncTask = new GateStateSyncTask(
+                gateManager, gateStructuresApi, this, gateStateSyncIntervalSeconds, org.bukkit.Material.STONE
+            );
+
             gateManager.reloadGates().whenComplete((unused, error) -> {
                 if (error != null) {
                     getLogger().warning("Failed to load gates from API: " + error.getMessage());
                 } else {
                     getLogger().info("Loaded " + gateManager.getAllGates().size() + " gate(s) from API");
+                    // Block edits must happen on the main thread; the reload future may complete off it.
+                    getServer().getScheduler().runTask(this, () -> gateStateSyncTask.reconcileWorldOnStartup());
                 }
             });
 
@@ -330,10 +340,12 @@ public class KnKPlugin extends JavaPlugin {
 
             WorldGuardIntegration worldGuardIntegration = new WorldGuardIntegration(this);
             for (org.bukkit.World world : getServer().getWorlds()) {
-                new GateAnimationTask(gateManager, world, org.bukkit.Material.STONE, worldGuardIntegration)
+                new GateAnimationTask(gateManager, world, org.bukkit.Material.STONE, worldGuardIntegration,
+                    gateStructuresApi, this)
                     .runTaskTimer(this, 1L, 1L);
             }
             getLogger().info("Registered gate event listener and animation tasks for " + getServer().getWorlds().size() + " world(s)");
+            gateStateSyncTask.start();
             
             // Register task event listeners (wired after handler registration)
             var retrievedWgRegionHandler = (WgRegionIdTaskHandler) 
@@ -373,6 +385,11 @@ public class KnKPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (gateStateSyncTask != null) {
+            gateStateSyncTask.stop();
+            getLogger().info("Persisting final gate states before shutdown...");
+            gateStateSyncTask.persistAllGateStates();
+        }
         if (headlessWorldTaskPoller != null) {
             headlessWorldTaskPoller.stop();
         }

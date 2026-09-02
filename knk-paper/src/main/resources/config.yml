@@ -61,6 +61,14 @@ world-tasks:
   # Idle back-off: the interval doubles up to this value while no headless task is found
   headless-poll-max-interval-seconds: 60
 
+# Gate structure state synchronization
+gates:
+  # How often (seconds) the plugin pushes the current open/closed/destroyed state of every
+  # gate to the API, as a safety net for state changes that were never persisted (e.g. a crash
+  # mid-animation). The state is also pushed once immediately after every open/close animation
+  # completes, and once more right before shutdown, so this interval can stay relatively long.
+  state-sync-interval-seconds: 120
+
 # Messages configuration
 messages:
   # Prefix for all plugin messages

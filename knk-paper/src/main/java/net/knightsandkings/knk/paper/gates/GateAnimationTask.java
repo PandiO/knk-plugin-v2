@@ -1,5 +1,6 @@
 package net.knightsandkings.knk.paper.gates;
 
+import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
@@ -11,6 +12,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
@@ -42,6 +44,8 @@ public class GateAnimationTask extends BukkitRunnable {
     private final World world;
     private final Material fallbackMaterial;
     private final WorldGuardIntegration worldGuardIntegration;
+    private final GateStructuresApi gateStructuresApi;
+    private final Plugin plugin;
     
     private long lastLagCheck = 0;
     private boolean isLagging = false;
@@ -54,13 +58,18 @@ public class GateAnimationTask extends BukkitRunnable {
      * @param world The world to place blocks in
      * @param fallbackMaterial Fallback material if block data is corrupted
      * @param worldGuardIntegration WorldGuard integration for region sync
+     * @param gateStructuresApi API client used to persist state once an animation completes
+     * @param plugin Plugin instance for scheduling the async persistence call
      */
     public GateAnimationTask(GateManager gateManager, World world, Material fallbackMaterial, 
-                             WorldGuardIntegration worldGuardIntegration) {
+                             WorldGuardIntegration worldGuardIntegration, GateStructuresApi gateStructuresApi,
+                             Plugin plugin) {
         this.gateManager = gateManager;
         this.world = world;
         this.fallbackMaterial = fallbackMaterial != null ? fallbackMaterial : Material.STONE;
         this.worldGuardIntegration = worldGuardIntegration;
+        this.gateStructuresApi = gateStructuresApi;
+        this.plugin = plugin;
         LOGGER.info("[GateAnimation] Scheduled animation task for world '" + world.getName() + "'");
     }
 
@@ -265,6 +274,8 @@ public class GateAnimationTask extends BukkitRunnable {
         if (worldGuardIntegration != null) {
             worldGuardIntegration.syncRegions(gate, AnimationState.OPEN, world);
         }
+
+        persistGateState(gate);
     }
 
     /**
@@ -294,6 +305,34 @@ public class GateAnimationTask extends BukkitRunnable {
         if (worldGuardIntegration != null) {
             worldGuardIntegration.syncRegions(gate, AnimationState.CLOSED, world);
         }
+
+        persistGateState(gate);
+    }
+
+    /**
+     * Persist the gate's terminal state (opened/destroyed) to the API asynchronously,
+     * so the DB stays in sync as soon as an open/close animation completes.
+     */
+    private void persistGateState(CachedGate gate) {
+        if (gateStructuresApi == null) {
+            return;
+        }
+
+        boolean isOpened = gate.getCurrentState() == AnimationState.OPEN;
+        boolean isDestroyed = gate.isDestroyed();
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    gateStructuresApi.updateGateState(gate.getId(), isOpened, isDestroyed).join();
+                    LOGGER.fine("Gate state persisted to API: " + gate.getName() +
+                        " (opened=" + isOpened + ", destroyed=" + isDestroyed + ")");
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to persist gate state for '" + gate.getName() + "': " + e.getMessage());
+                }
+            }
+        }.runTaskAsynchronously(plugin);
     }
 
     /**
