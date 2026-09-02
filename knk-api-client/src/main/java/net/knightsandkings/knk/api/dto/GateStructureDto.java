@@ -100,6 +100,12 @@ public class GateStructureDto {
     @JsonProperty("geometryDepth")
     private Integer geometryDepth;
 
+    @JsonProperty("motionDistanceBlocks")
+    private Integer motionDistanceBlocks;
+
+    @JsonProperty("clipToGeometryBounds")
+    private Boolean clipToGeometryBounds;
+
     // === FLOOD_FILL Geometry ===
     @JsonProperty("seedBlocks")
     private String seedBlocks;
@@ -357,6 +363,22 @@ public class GateStructureDto {
 
     public void setGeometryDepth(Integer geometryDepth) {
         this.geometryDepth = geometryDepth;
+    }
+
+    public Integer getMotionDistanceBlocks() {
+        return motionDistanceBlocks;
+    }
+
+    public void setMotionDistanceBlocks(Integer motionDistanceBlocks) {
+        this.motionDistanceBlocks = motionDistanceBlocks;
+    }
+
+    public Boolean getClipToGeometryBounds() {
+        return clipToGeometryBounds;
+    }
+
+    public void setClipToGeometryBounds(Boolean clipToGeometryBounds) {
+        this.clipToGeometryBounds = clipToGeometryBounds;
     }
 
     public String getSeedBlocks() {

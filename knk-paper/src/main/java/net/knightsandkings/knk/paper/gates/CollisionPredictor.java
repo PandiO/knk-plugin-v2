@@ -35,6 +35,9 @@ public class CollisionPredictor {
         for (int frame = startFrame; frame <= endFrame; frame++) {
             for (BlockSnapshot block : gate.getBlocks()) {
                 Vector position = GateFrameCalculator.calculateBlockPosition(gate, block, frame);
+                if (position == null) {
+                    continue;
+                }
                 BoundingBox blockBox = new BoundingBox(
                     position.getX(),
                     position.getY(),

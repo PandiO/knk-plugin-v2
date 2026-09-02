@@ -122,12 +122,13 @@ public class GateLoaderAdapter {
         gate.setWorldName(CoordinateParser.parseWorldName(dto.getAnchorPoint()));
         gate.setCanRespawn(dto.getCanRespawn() != null ? dto.getCanRespawn() : true);
         gate.setRespawnRateSeconds(dto.getRespawnRateSeconds() != null ? dto.getRespawnRateSeconds() : 300);
+        gate.setClipToGeometryBounds(Boolean.TRUE.equals(dto.getClipToGeometryBounds()));
 
         // Precompute local basis vectors
         precomputeBasisVectors(gate, dto);
 
         // Precompute motion vector
-        precomputeMotionVector(gate);
+        precomputeMotionVector(gate, dto);
 
         // Load block snapshots
         loadBlockSnapshots(gate, snapshotDtos);
@@ -179,7 +180,7 @@ public class GateLoaderAdapter {
     /**
      * Precompute motion vector based on motion type and geometry.
      */
-    private void precomputeMotionVector(CachedGate gate) {
+    private void precomputeMotionVector(CachedGate gate, GateStructureDto dto) {
         String motionType = gate.getMotionType();
         Vector nAxis = gate.getNAxis();
 
@@ -188,14 +189,19 @@ public class GateLoaderAdapter {
             return;
         }
 
+        int distance = resolveMotionDistance(gate, dto, motionType);
+
         switch (motionType) {
             case "VERTICAL":
-                // Move upward along v-axis (or just +Y)
-                gate.setMotionVector(new Vector(0, gate.getGeometryDepth(), 0));
+                Vector vAxis = gate.getVAxis();
+                Vector verticalAxis = vAxis != null && vAxis.lengthSquared() > 0 ? vAxis.clone() : new Vector(0, 1, 0);
+                gate.setMotionVector(verticalAxis.multiply(distance));
                 break;
             case "LATERAL":
-                // Move along n-axis
-                gate.setMotionVector(nAxis.clone().multiply(gate.getGeometryDepth()));
+                // Slides sideways along the door plane, not through it.
+                Vector uAxis = gate.getUAxis();
+                Vector lateralAxis = uAxis != null && uAxis.lengthSquared() > 0 ? uAxis.clone() : new Vector(1, 0, 0);
+                gate.setMotionVector(lateralAxis.multiply(distance));
                 break;
             case "ROTATION":
                 // No linear motion vector, rotation handled separately
@@ -208,6 +214,22 @@ public class GateLoaderAdapter {
         }
 
         LOGGER.fine("Gate " + gate.getName() + " motion vector: " + gate.getMotionVector());
+    }
+
+    /**
+     * MotionDistanceBlocks wins; legacy gates fall back to the geometry axis matching the motion type.
+     */
+    private int resolveMotionDistance(CachedGate gate, GateStructureDto dto, String motionType) {
+        Integer configured = dto.getMotionDistanceBlocks();
+        if (configured != null && configured != 0) {
+            return configured;
+        }
+
+        return switch (motionType) {
+            case "VERTICAL" -> gate.getGeometryHeight();
+            case "LATERAL" -> gate.getGeometryWidth();
+            default -> 0;
+        };
     }
 
     /**

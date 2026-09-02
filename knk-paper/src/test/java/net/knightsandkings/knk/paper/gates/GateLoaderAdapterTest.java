@@ -32,7 +32,8 @@ class GateLoaderAdapterTest {
         dto.setGeometryDefinitionMode("PLANE_GRID");
         dto.setAnimationDurationTicks(60);
         dto.setAnimationTickRate(1);
-        dto.setGeometryDepth(3);
+        dto.setGeometryDepth(1);
+        dto.setMotionDistanceBlocks(3);
         dto.setAnchorPoint("{\"x\":0,\"y\":0,\"z\":0}");
         dto.setReferencePoint1("{\"x\":1,\"y\":0,\"z\":0}");
         dto.setReferencePoint2("{\"x\":0,\"y\":1,\"z\":0}");
@@ -56,7 +57,8 @@ class GateLoaderAdapterTest {
         assertEquals(1, uAxis.getX(), EPSILON);
         assertEquals(1, vAxis.getY(), EPSILON);
         assertEquals(1, nAxis.getZ(), EPSILON);
-        assertEquals(3, motion.getZ(), EPSILON);
+        // LATERAL slides sideways along the u-axis, not through the door plane.
+        assertEquals(3, motion.getX(), EPSILON);
     }
 
     @Test

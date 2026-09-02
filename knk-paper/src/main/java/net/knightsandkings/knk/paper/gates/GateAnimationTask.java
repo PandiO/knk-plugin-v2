@@ -14,6 +14,8 @@ import org.bukkit.entity.Entity;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
@@ -160,36 +162,57 @@ public class GateAnimationTask extends BukkitRunnable {
             return;
         }
 
+        int previousFrame = gate.getCurrentState() == AnimationState.OPENING
+            ? Math.max(0, frame - Math.max(1, gate.getAnimationTickRate()))
+            : Math.min(gate.getAnimationDurationTicks(), frame + Math.max(1, gate.getAnimationTickRate()));
+
+        List<BlockPlacement> placements = new ArrayList<>();
+        List<BlockPlacement> vacancies = new ArrayList<>();
+        Set<Long> targetCells = new HashSet<>();
+
         for (BlockSnapshot block : gate.getBlocks()) {
             if (block == null) {
                 continue;
             }
 
-            // Calculate world position for this block at this frame
             Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, block, frame);
-
-            if (worldPos == null) {
-                continue;
-            }
-
-            // Check if chunk is loaded
-            if (!GateBlockPlacer.isChunkLoaded(world, worldPos)) {
-                // Skip this gate until chunk loads
-                LOGGER.fine("Gate " + gate.getName() + " is in unloaded chunk, pausing animation");
-                return;
-            }
-
-            int previousFrame = gate.getCurrentState() == AnimationState.OPENING
-                ? Math.max(0, frame - Math.max(1, gate.getAnimationTickRate()))
-                : Math.min(gate.getAnimationDurationTicks(), frame + Math.max(1, gate.getAnimationTickRate()));
             Vector previousPosition = GateFrameCalculator.calculateBlockPosition(gate, block, previousFrame);
 
-            if (previousPosition != null && !previousPosition.equals(worldPos)) {
-                GateBlockPlacer.removeBlock(world, previousPosition);
+            if (worldPos != null) {
+                if (!GateBlockPlacer.isChunkLoaded(world, worldPos)) {
+                    LOGGER.fine("Gate " + gate.getName() + " is in unloaded chunk, pausing animation");
+                    return;
+                }
+                placements.add(new BlockPlacement(worldPos, block.getBlockData()));
+                targetCells.add(packCell(worldPos));
             }
 
-            GateBlockPlacer.placeBlock(world, worldPos, block.getBlockData(), fallbackMaterial);
+            if (previousPosition != null) {
+                vacancies.add(new BlockPlacement(previousPosition, block.getBlockData()));
+            }
         }
+
+        // Clear vacated cells first, but never a cell another block moves into this frame:
+        // otherwise a later snapshot erases what an earlier one just placed.
+        for (BlockPlacement vacancy : vacancies) {
+            if (targetCells.contains(packCell(vacancy.position()))) {
+                continue;
+            }
+            GateBlockPlacer.removeBlockIfMatches(world, vacancy.position(), vacancy.blockData(), fallbackMaterial);
+        }
+
+        for (BlockPlacement placement : placements) {
+            GateBlockPlacer.placeBlockIfVacant(world, placement.position(), placement.blockData(), fallbackMaterial);
+        }
+    }
+
+    private static long packCell(Vector position) {
+        return (((long) position.getBlockX() & 0x3FFFFFFL) << 38)
+            | (((long) position.getBlockY() & 0xFFFL) << 26)
+            | ((long) position.getBlockZ() & 0x3FFFFFFL);
+    }
+
+    private record BlockPlacement(Vector position, String blockData) {
     }
 
     private void handleEntityPush(CachedGate gate, int currentFrame) {
@@ -199,17 +222,30 @@ public class GateAnimationTask extends BukkitRunnable {
         }
 
         Location origin = new Location(world, anchor.getX(), anchor.getY(), anchor.getZ());
+        double radius = entitySearchRadius(gate);
 
-        for (Entity entity : world.getNearbyEntities(origin, ENTITY_PUSH_RADIUS, ENTITY_PUSH_RADIUS, ENTITY_PUSH_RADIUS)) {
+        for (Entity entity : world.getNearbyEntities(origin, radius, radius, radius)) {
             if (entity.isDead()) {
                 continue;
             }
 
             int framesToCollision = CollisionPredictor.predictCollision(gate, entity, currentFrame);
-            if (framesToCollision <= ENTITY_COLLISION_FRAMES_THRESHOLD) {
+            if (framesToCollision == 0) {
+                // Already inside the blocks being rendered this frame; a push cannot save it.
+                if (!EntityEvacuator.evacuate(entity, gate)) {
+                    EntityPusher.pushEntity(entity, gate);
+                }
+            } else if (framesToCollision <= ENTITY_COLLISION_FRAMES_THRESHOLD) {
                 EntityPusher.pushEntity(entity, gate);
             }
         }
+    }
+
+    private double entitySearchRadius(CachedGate gate) {
+        int span = Math.max(gate.getGeometryWidth(), Math.max(gate.getGeometryHeight(), gate.getGeometryDepth()));
+        Vector motion = gate.getMotionVector();
+        double travel = motion != null ? motion.length() : 0.0;
+        return Math.max(ENTITY_PUSH_RADIUS, span + travel);
     }
 
     /**

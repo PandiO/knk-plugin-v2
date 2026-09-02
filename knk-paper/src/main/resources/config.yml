@@ -54,6 +54,13 @@ account:
     # How often to remove stale cooldown entries from memory
     cleanup-interval-minutes: 5
 
+# WorldTask configuration
+world-tasks:
+  # How often the plugin polls the API for headless (player-less) WorldTasks
+  headless-poll-interval-seconds: 5
+  # Idle back-off: the interval doubles up to this value while no headless task is found
+  headless-poll-max-interval-seconds: 60
+
 # Messages configuration
 messages:
   # Prefix for all plugin messages

@@ -11,13 +11,15 @@ import org.bukkit.util.Vector;
  */
 public class GateFrameCalculator {
 
+    private static final double BOUNDS_EPSILON = 0.001;
+
     /**
      * Calculate the world position of a block at a specific animation frame.
      * 
      * @param gate The cached gate containing animation configuration
      * @param block The block snapshot to calculate position for
      * @param frame Current animation frame (0 = closed, animationDurationTicks = open)
-     * @return World position for the block at this frame
+     * @return World position for the block at this frame, or null when the block is clipped away
      */
     public static Vector calculateBlockPosition(CachedGate gate, BlockSnapshot block, int frame) {
         if (gate == null || block == null) {
@@ -37,12 +39,51 @@ public class GateFrameCalculator {
         // Calculate world position based on motion type
         String motionType = gate.getMotionType();
         
+        Vector position;
         if ("ROTATION".equals(motionType)) {
-            return calculateRotationPosition(gate, relativePos, progress);
+            position = calculateRotationPosition(gate, relativePos, progress);
         } else {
             // VERTICAL or LATERAL - linear motion
-            return calculateLinearPosition(gate, relativePos, progress);
+            position = calculateLinearPosition(gate, relativePos, progress);
         }
+
+        if (gate.isClipToGeometryBounds() && !isWithinGeometryBounds(gate, position)) {
+            return null;
+        }
+
+        return position;
+    }
+
+    /**
+     * Projects a world position back onto the gate's u/v/n basis and checks it against the
+     * Width/Height/Depth box. Lets a door retract into a housing instead of sticking out of it.
+     */
+    public static boolean isWithinGeometryBounds(CachedGate gate, Vector worldPosition) {
+        if (gate == null || worldPosition == null) {
+            return false;
+        }
+
+        Vector anchor = gate.getAnchorPoint();
+        Vector uAxis = gate.getUAxis();
+        Vector vAxis = gate.getVAxis();
+        Vector nAxis = gate.getNAxis();
+
+        if (anchor == null || uAxis == null || vAxis == null || nAxis == null) {
+            return true;
+        }
+
+        Vector local = worldPosition.clone().subtract(anchor);
+
+        return withinAxis(local.dot(uAxis), gate.getGeometryWidth())
+            && withinAxis(local.dot(vAxis), gate.getGeometryHeight())
+            && withinAxis(local.dot(nAxis), gate.getGeometryDepth());
+    }
+
+    private static boolean withinAxis(double projection, int extent) {
+        if (extent <= 0) {
+            return true;
+        }
+        return projection >= -BOUNDS_EPSILON && projection <= extent - 1 + BOUNDS_EPSILON;
     }
 
     /**

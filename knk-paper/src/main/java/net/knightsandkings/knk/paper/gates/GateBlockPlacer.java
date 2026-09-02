@@ -80,6 +80,85 @@ public class GateBlockPlacer {
     }
 
     /**
+     * Place a gate block only when the target cell is free, or already holds the exact
+     * block the gate wants there. Anything else (player builds, terrain) is left untouched.
+     *
+     * @return True if the block was placed, false if the position was skipped
+     */
+    public static boolean placeBlockIfVacant(World world, Vector position, String blockData, Material fallbackMaterial) {
+        if (world == null || position == null) {
+            return false;
+        }
+
+        Block block = getBlockIfLoaded(world, position);
+        if (block == null) {
+            return false;
+        }
+
+        BlockData desired = parseBlockData(blockData, fallbackMaterial);
+        if (desired == null) {
+            return false;
+        }
+
+        if (block.getBlockData().matches(desired)) {
+            return true;
+        }
+
+        if (!isReplaceable(block)) {
+            LOGGER.fine("Skipped gate block at " + describe(position) + ": occupied by "
+                + block.getType() + " which the gate did not place");
+            return false;
+        }
+
+        return placeBlock(world, position, blockData, fallbackMaterial);
+    }
+
+    /**
+     * Remove a gate block only when the cell still holds the block the gate put there.
+     * Protects against wiping blocks a player placed in the gate's path mid-animation.
+     *
+     * @return True if the block was removed, false if the position was skipped
+     */
+    public static boolean removeBlockIfMatches(World world, Vector position, String expectedBlockData, Material fallbackMaterial) {
+        if (world == null || position == null) {
+            return false;
+        }
+
+        Block block = getBlockIfLoaded(world, position);
+        if (block == null) {
+            return false;
+        }
+
+        if (block.getType() == Material.AIR) {
+            return true;
+        }
+
+        BlockData expected = parseBlockData(expectedBlockData, fallbackMaterial);
+        if (expected == null || !block.getBlockData().matches(expected)) {
+            LOGGER.fine("Skipped gate block removal at " + describe(position) + ": found "
+                + block.getType() + " instead of the expected gate block");
+            return false;
+        }
+
+        return removeBlock(world, position);
+    }
+
+    private static Block getBlockIfLoaded(World world, Vector position) {
+        if (!world.isChunkLoaded(position.getBlockX() >> 4, position.getBlockZ() >> 4)) {
+            return null;
+        }
+        return world.getBlockAt(position.getBlockX(), position.getBlockY(), position.getBlockZ());
+    }
+
+    private static boolean isReplaceable(Block block) {
+        return block.getType() == Material.AIR || block.isLiquid() || block.isReplaceable();
+    }
+
+    private static String describe(Vector position) {
+        return "(" + position.getBlockX() + ", " + position.getBlockY() + ", " + position.getBlockZ() + ")";
+    }
+
+    /**
      * Remove a block by setting it to air.
      * 
      * @param world The world to remove the block from

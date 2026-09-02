@@ -33,6 +33,7 @@ public class CachedGate {
     private final int geometryWidth;
     private final int geometryHeight;
     private final int geometryDepth;
+    private boolean clipToGeometryBounds;
 
     // === Precomputed Local Basis Vectors ===
     private Vector uAxis;  // Width direction
@@ -164,6 +165,14 @@ public class CachedGate {
 
     public int getGeometryDepth() {
         return geometryDepth;
+    }
+
+    public boolean isClipToGeometryBounds() {
+        return clipToGeometryBounds;
+    }
+
+    public void setClipToGeometryBounds(boolean clipToGeometryBounds) {
+        this.clipToGeometryBounds = clipToGeometryBounds;
     }
 
     public Vector getUAxis() {

@@ -49,7 +49,7 @@ public class EntityPusher {
         return new Vector(0, 0, 0);
     }
 
-    private static Vector vectorFromFaceDirection(String faceDirection) {
+    static Vector vectorFromFaceDirection(String faceDirection) {
         if (faceDirection == null || faceDirection.isBlank()) {
             return null;
         }
