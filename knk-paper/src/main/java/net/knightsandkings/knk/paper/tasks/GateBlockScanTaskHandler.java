@@ -264,6 +264,22 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
         });
     }
 
+    /**
+     * Forces the given chunk to load (and generate if necessary) so its blocks can be scanned.
+     * Runs synchronously on the main thread, which is safe here since callers already run tick-budgeted.
+     */
+    private boolean ensureChunkLoaded(World world, int chunkX, int chunkZ) {
+        if (world.isChunkLoaded(chunkX, chunkZ)) {
+            return true;
+        }
+        try {
+            return world.getChunkAt(chunkX, chunkZ) != null;
+        } catch (Exception e) {
+            LOGGER.warning("[GateBlockScan] Failed to load chunk (" + chunkX + ", " + chunkZ + "): " + e.getMessage());
+            return false;
+        }
+    }
+
     private Integer parseGateStructureId(String inputJson) {
         if (inputJson == null || inputJson.isBlank()) {
             return null;
@@ -366,7 +382,7 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
 
             int chunkX = worldX >> 4;
             int chunkZ = worldZ >> 4;
-            if (!wing.world.isChunkLoaded(chunkX, chunkZ)) {
+            if (!ensureChunkLoaded(wing.world, chunkX, chunkZ)) {
                 skippedUnloadedChunks++;
                 return;
             }
@@ -499,7 +515,7 @@ public class GateBlockScanTaskHandler implements IHeadlessWorldTaskHandler {
             int worldY = cell.getBlockY();
             int worldZ = cell.getBlockZ();
 
-            if (!world.isChunkLoaded(worldX >> 4, worldZ >> 4)) {
+            if (!ensureChunkLoaded(world, worldX >> 4, worldZ >> 4)) {
                 skippedUnloadedChunks++;
                 return;
             }
