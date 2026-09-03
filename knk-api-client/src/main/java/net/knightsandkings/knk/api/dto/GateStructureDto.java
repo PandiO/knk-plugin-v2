@@ -159,6 +159,26 @@ public class GateStructureDto {
     @JsonProperty("regionOpenedId")
     private String regionOpenedId;
 
+    // === Health Display ===
+    @JsonProperty("showHealthDisplay")
+    private Boolean showHealthDisplay;
+
+    @JsonProperty("healthDisplayMode")
+    private String healthDisplayMode;
+
+    @JsonProperty("healthDisplayYOffset")
+    private Integer healthDisplayYOffset;
+
+    @JsonProperty("gateNameDisplayMode")
+    private String gateNameDisplayMode;
+
+    @JsonProperty("statusDisplayMode")
+    private String statusDisplayMode;
+
+    // === Siege Integration ===
+    @JsonProperty("currentSiegeId")
+    private Integer currentSiegeId;
+
     // === Block Snapshots ===
     @JsonProperty("blockSnapshots")
     private List<GateBlockSnapshotDto> blockSnapshots;
@@ -499,6 +519,54 @@ public class GateStructureDto {
 
     public void setRegionOpenedId(String regionOpenedId) {
         this.regionOpenedId = regionOpenedId;
+    }
+
+    public Boolean getShowHealthDisplay() {
+        return showHealthDisplay;
+    }
+
+    public void setShowHealthDisplay(Boolean showHealthDisplay) {
+        this.showHealthDisplay = showHealthDisplay;
+    }
+
+    public String getHealthDisplayMode() {
+        return healthDisplayMode;
+    }
+
+    public void setHealthDisplayMode(String healthDisplayMode) {
+        this.healthDisplayMode = healthDisplayMode;
+    }
+
+    public Integer getHealthDisplayYOffset() {
+        return healthDisplayYOffset;
+    }
+
+    public void setHealthDisplayYOffset(Integer healthDisplayYOffset) {
+        this.healthDisplayYOffset = healthDisplayYOffset;
+    }
+
+    public String getGateNameDisplayMode() {
+        return gateNameDisplayMode;
+    }
+
+    public void setGateNameDisplayMode(String gateNameDisplayMode) {
+        this.gateNameDisplayMode = gateNameDisplayMode;
+    }
+
+    public String getStatusDisplayMode() {
+        return statusDisplayMode;
+    }
+
+    public void setStatusDisplayMode(String statusDisplayMode) {
+        this.statusDisplayMode = statusDisplayMode;
+    }
+
+    public Integer getCurrentSiegeId() {
+        return currentSiegeId;
+    }
+
+    public void setCurrentSiegeId(Integer currentSiegeId) {
+        this.currentSiegeId = currentSiegeId;
     }
 
     public List<GateBlockSnapshotDto> getBlockSnapshots() {

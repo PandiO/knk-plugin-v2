@@ -30,7 +30,7 @@ public class HealthSystemTest {
     @BeforeEach
     public void setUp() throws Exception {
         MockitoAnnotations.openMocks(this);
-        healthSystem = new HealthSystem(mockGateStructuresApi, mockPlugin);
+        healthSystem = new HealthSystem(mockGateStructuresApi, mockPlugin, null);
     }
 
     @Test

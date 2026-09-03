@@ -66,6 +66,16 @@ public class CachedGate {
     private int respawnRateSeconds;
     private long respawnScheduledTime; // When respawn task is scheduled for
 
+    // === Health Display ===
+    private boolean showHealthDisplay = true;
+    private String healthDisplayMode = "ALWAYS";
+    private int healthDisplayYOffset = 2;
+    private String gateNameDisplayMode = "ALWAYS";
+    private String statusDisplayMode = "ALWAYS";
+
+    // === Siege Integration ===
+    private Integer currentSiegeId;
+
     public CachedGate(int id, String name, String gateType, String motionType, String geometryDefinitionMode,
                       int animationDurationTicks, int animationTickRate,
                       Vector anchorPoint, int geometryWidth, int geometryHeight, int geometryDepth,
@@ -243,6 +253,30 @@ public class CachedGate {
         return respawnScheduledTime;
     }
 
+    public boolean isShowHealthDisplay() {
+        return showHealthDisplay;
+    }
+
+    public String getHealthDisplayMode() {
+        return healthDisplayMode;
+    }
+
+    public int getHealthDisplayYOffset() {
+        return healthDisplayYOffset;
+    }
+
+    public String getGateNameDisplayMode() {
+        return gateNameDisplayMode;
+    }
+
+    public String getStatusDisplayMode() {
+        return statusDisplayMode;
+    }
+
+    public Integer getCurrentSiegeId() {
+        return currentSiegeId;
+    }
+
     // === Setters for Mutable State ===
 
     public void setCurrentState(AnimationState currentState) {
@@ -299,6 +333,30 @@ public class CachedGate {
 
     public void setWorldName(String worldName) {
         this.worldName = worldName != null ? worldName : "";
+    }
+
+    public void setShowHealthDisplay(boolean showHealthDisplay) {
+        this.showHealthDisplay = showHealthDisplay;
+    }
+
+    public void setHealthDisplayMode(String healthDisplayMode) {
+        this.healthDisplayMode = healthDisplayMode != null ? healthDisplayMode : "ALWAYS";
+    }
+
+    public void setHealthDisplayYOffset(int healthDisplayYOffset) {
+        this.healthDisplayYOffset = healthDisplayYOffset;
+    }
+
+    public void setGateNameDisplayMode(String gateNameDisplayMode) {
+        this.gateNameDisplayMode = gateNameDisplayMode != null ? gateNameDisplayMode : "ALWAYS";
+    }
+
+    public void setStatusDisplayMode(String statusDisplayMode) {
+        this.statusDisplayMode = statusDisplayMode != null ? statusDisplayMode : "ALWAYS";
+    }
+
+    public void setCurrentSiegeId(Integer currentSiegeId) {
+        this.currentSiegeId = currentSiegeId;
     }
 
     // === Setters for Precomputed Data ===

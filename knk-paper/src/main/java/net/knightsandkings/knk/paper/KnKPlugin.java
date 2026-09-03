@@ -49,6 +49,8 @@ import net.knightsandkings.knk.paper.dataaccess.DataAccessFactory;
 import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.gates.GateLoaderAdapter;
 import net.knightsandkings.knk.paper.gates.GateAnimationTask;
+import net.knightsandkings.knk.paper.gates.GateDisplayManager;
+import net.knightsandkings.knk.paper.gates.GateDisplayUpdateTask;
 import net.knightsandkings.knk.paper.gates.GateStateSyncTask;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
@@ -98,6 +100,7 @@ public class KnKPlugin extends JavaPlugin {
     private GateStructuresApi gateStructuresApi;
     private GateManager gateManager;
     private GateStateSyncTask gateStateSyncTask;
+    private GateDisplayManager gateDisplayManager;
     private WorldTaskHandlerRegistry worldTaskHandlerRegistry;
     private HeadlessWorldTaskPoller headlessWorldTaskPoller;
     private UserManager userManager;
@@ -171,6 +174,9 @@ public class KnKPlugin extends JavaPlugin {
             GateLoaderAdapter gateLoader = new GateLoaderAdapter(gateManager);
             gateManager.setReloadAction(() -> gateLoader.loadAll(gateStructuresApi));
 
+            this.gateDisplayManager = new GateDisplayManager(this);
+            getLogger().info("GateDisplayManager initialized");
+
             int gateStateSyncIntervalSeconds = getConfig().getInt("gates.state-sync-interval-seconds", 120);
             this.gateStateSyncTask = new GateStateSyncTask(
                 gateManager, gateStructuresApi, this, gateStateSyncIntervalSeconds, org.bukkit.Material.STONE
@@ -181,8 +187,15 @@ public class KnKPlugin extends JavaPlugin {
                     getLogger().warning("Failed to load gates from API: " + error.getMessage());
                 } else {
                     getLogger().info("Loaded " + gateManager.getAllGates().size() + " gate(s) from API");
-                    // Block edits must happen on the main thread; the reload future may complete off it.
-                    getServer().getScheduler().runTask(this, () -> gateStateSyncTask.reconcileWorldOnStartup());
+                    // Block edits and entity spawning must happen on the main thread; the reload future may complete off it.
+                    getServer().getScheduler().runTask(this, () -> {
+                        gateStateSyncTask.reconcileWorldOnStartup();
+                        for (org.bukkit.World world : getServer().getWorlds()) {
+                            gateDisplayManager.cleanupOrphans(world, gateManager);
+                        }
+                        gateDisplayManager.syncAll(gateManager);
+                        getLogger().info("Gate info displays synced for " + gateManager.getAllGates().size() + " gate(s)");
+                    });
                 }
             });
 
@@ -335,16 +348,17 @@ public class KnKPlugin extends JavaPlugin {
             );
             registerEvents(regionTracker);
 
-            HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this);
+            HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this, gateDisplayManager);
             getServer().getPluginManager().registerEvents(new GateEventListener(gateManager, healthSystem), this);
 
             WorldGuardIntegration worldGuardIntegration = new WorldGuardIntegration(this);
             for (org.bukkit.World world : getServer().getWorlds()) {
                 new GateAnimationTask(gateManager, world, org.bukkit.Material.STONE, worldGuardIntegration,
-                    gateStructuresApi, this)
+                    gateStructuresApi, this, gateDisplayManager)
                     .runTaskTimer(this, 1L, 1L);
             }
-            getLogger().info("Registered gate event listener and animation tasks for " + getServer().getWorlds().size() + " world(s)");
+            new GateDisplayUpdateTask(gateDisplayManager, gateManager).runTaskTimer(this, 20L, 20L);
+            getLogger().info("Registered gate event listener, animation tasks, and display refresh task for " + getServer().getWorlds().size() + " world(s)");
             gateStateSyncTask.start();
             
             // Register task event listeners (wired after handler registration)
@@ -389,6 +403,9 @@ public class KnKPlugin extends JavaPlugin {
             gateStateSyncTask.stop();
             getLogger().info("Persisting final gate states before shutdown...");
             gateStateSyncTask.persistAllGateStates();
+        }
+        if (gateDisplayManager != null) {
+            gateDisplayManager.removeAll();
         }
         if (headlessWorldTaskPoller != null) {
             headlessWorldTaskPoller.stop();

@@ -46,30 +46,33 @@ public class GateAnimationTask extends BukkitRunnable {
     private final WorldGuardIntegration worldGuardIntegration;
     private final GateStructuresApi gateStructuresApi;
     private final Plugin plugin;
-    
+    private final GateDisplayManager displayManager;
+
     private long lastLagCheck = 0;
     private boolean isLagging = false;
     private final Set<Integer> emptySnapshotWarnings = new HashSet<>();
 
     /**
      * Create a new gate animation task.
-     * 
+     *
      * @param gateManager The gate manager containing all cached gates
      * @param world The world to place blocks in
      * @param fallbackMaterial Fallback material if block data is corrupted
      * @param worldGuardIntegration WorldGuard integration for region sync
      * @param gateStructuresApi API client used to persist state once an animation completes
      * @param plugin Plugin instance for scheduling the async persistence call
+     * @param displayManager Manager used to refresh the gate's info display when its status changes
      */
-    public GateAnimationTask(GateManager gateManager, World world, Material fallbackMaterial, 
+    public GateAnimationTask(GateManager gateManager, World world, Material fallbackMaterial,
                              WorldGuardIntegration worldGuardIntegration, GateStructuresApi gateStructuresApi,
-                             Plugin plugin) {
+                             Plugin plugin, GateDisplayManager displayManager) {
         this.gateManager = gateManager;
         this.world = world;
         this.fallbackMaterial = fallbackMaterial != null ? fallbackMaterial : Material.STONE;
         this.worldGuardIntegration = worldGuardIntegration;
         this.gateStructuresApi = gateStructuresApi;
         this.plugin = plugin;
+        this.displayManager = displayManager;
         LOGGER.info("[GateAnimation] Scheduled animation task for world '" + world.getName() + "'");
     }
 
@@ -275,6 +278,10 @@ public class GateAnimationTask extends BukkitRunnable {
             worldGuardIntegration.syncRegions(gate, AnimationState.OPEN, world);
         }
 
+        if (displayManager != null) {
+            displayManager.syncDisplay(gate);
+        }
+
         persistGateState(gate);
     }
 
@@ -304,6 +311,10 @@ public class GateAnimationTask extends BukkitRunnable {
         // Sync WorldGuard regions
         if (worldGuardIntegration != null) {
             worldGuardIntegration.syncRegions(gate, AnimationState.CLOSED, world);
+        }
+
+        if (displayManager != null) {
+            displayManager.syncDisplay(gate);
         }
 
         persistGateState(gate);

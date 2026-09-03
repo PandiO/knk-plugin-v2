@@ -26,17 +26,19 @@ public class HealthSystem {
 
     private final GateStructuresApi gateStructuresApi;
     private final Plugin plugin;
+    private final GateDisplayManager displayManager;
 
     /**
      * Create a new health system.
-     * 
-     * @param gateManager The gate manager containing all cached gates
+     *
      * @param gateStructuresApi The API client for persisting state
      * @param plugin The plugin instance for scheduler access
+     * @param displayManager Manager used to refresh the gate's info display on health/state changes
      */
-    public HealthSystem(GateStructuresApi gateStructuresApi, Plugin plugin) {
+    public HealthSystem(GateStructuresApi gateStructuresApi, Plugin plugin, GateDisplayManager displayManager) {
         this.gateStructuresApi = gateStructuresApi;
         this.plugin = plugin;
+        this.displayManager = displayManager;
     }
 
     /**
@@ -73,6 +75,9 @@ public class HealthSystem {
         if (newHealth <= 0) {
             destroyGate(gate);
         } else {
+            if (displayManager != null) {
+                displayManager.syncDisplay(gate);
+            }
             // Persist health change to API asynchronously
             persistHealthChange(gate);
         }
@@ -104,6 +109,10 @@ public class HealthSystem {
         // Ensure a destroyed gate does not remain in an animating or open state.
         gate.setCurrentState(AnimationState.CLOSED);
         gate.setCurrentFrame(0);
+
+        if (displayManager != null) {
+            displayManager.syncDisplay(gate);
+        }
 
         // Persist destruction to API
         persistGateState(gate);
@@ -215,6 +224,10 @@ public class HealthSystem {
         gate.setCurrentFrame(0);
 
         restoreGateBlocks(gate);
+
+        if (displayManager != null) {
+            displayManager.syncDisplay(gate);
+        }
 
         // Persist respawn to API
         persistGateState(gate);

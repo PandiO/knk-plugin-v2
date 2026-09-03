@@ -124,6 +124,13 @@ public class GateLoaderAdapter {
         gate.setRespawnRateSeconds(dto.getRespawnRateSeconds() != null ? dto.getRespawnRateSeconds() : 300);
         gate.setClipToGeometryBounds(Boolean.TRUE.equals(dto.getClipToGeometryBounds()));
 
+        gate.setShowHealthDisplay(dto.getShowHealthDisplay() == null || dto.getShowHealthDisplay());
+        gate.setHealthDisplayMode(dto.getHealthDisplayMode());
+        gate.setHealthDisplayYOffset(dto.getHealthDisplayYOffset() != null ? dto.getHealthDisplayYOffset() : 2);
+        gate.setGateNameDisplayMode(dto.getGateNameDisplayMode());
+        gate.setStatusDisplayMode(dto.getStatusDisplayMode());
+        gate.setCurrentSiegeId(dto.getCurrentSiegeId());
+
         // Precompute local basis vectors
         precomputeBasisVectors(gate, dto);
 
