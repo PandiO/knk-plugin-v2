@@ -68,6 +68,11 @@ gates:
   # mid-animation). The state is also pushed once immediately after every open/close animation
   # completes, and once more right before shutdown, so this interval can stay relatively long.
   state-sync-interval-seconds: 120
+  # How often (seconds) the plugin scans every loaded world for orphaned (gate deleted) or
+  # duplicate (e.g. left behind by a chunk unload/reload) gate info displays and repairs them.
+  # Runs in addition to the one-shot cleanup at startup, so a duplicate that appears while the
+  # server is running gets fixed without needing a restart.
+  display-cleanup-interval-seconds: 60
 
 # Messages configuration
 messages:

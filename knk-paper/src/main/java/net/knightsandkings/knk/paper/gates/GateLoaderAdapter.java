@@ -127,6 +127,7 @@ public class GateLoaderAdapter {
         gate.setShowHealthDisplay(dto.getShowHealthDisplay() == null || dto.getShowHealthDisplay());
         gate.setHealthDisplayMode(dto.getHealthDisplayMode());
         gate.setHealthDisplayYOffset(dto.getHealthDisplayYOffset() != null ? dto.getHealthDisplayYOffset() : 2);
+        gate.setInfoDisplayLocation(CoordinateParser.parseCoordinate(dto.getInfoDisplayLocation()));
         gate.setGateNameDisplayMode(dto.getGateNameDisplayMode());
         gate.setStatusDisplayMode(dto.getStatusDisplayMode());
         gate.setCurrentSiegeId(dto.getCurrentSiegeId());

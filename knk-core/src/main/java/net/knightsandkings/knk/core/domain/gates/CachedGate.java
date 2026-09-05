@@ -70,6 +70,9 @@ public class CachedGate {
     private boolean showHealthDisplay = true;
     private String healthDisplayMode = "ALWAYS";
     private int healthDisplayYOffset = 2;
+    // Optional admin-configured override for the info hover's world position. Null means "compute
+    // it" (see GateDisplayManager.calculateDisplayLocation), which is the common case.
+    private Vector infoDisplayLocation;
     private String gateNameDisplayMode = "ALWAYS";
     private String statusDisplayMode = "ALWAYS";
 
@@ -265,6 +268,10 @@ public class CachedGate {
         return healthDisplayYOffset;
     }
 
+    public Vector getInfoDisplayLocation() {
+        return infoDisplayLocation;
+    }
+
     public String getGateNameDisplayMode() {
         return gateNameDisplayMode;
     }
@@ -345,6 +352,10 @@ public class CachedGate {
 
     public void setHealthDisplayYOffset(int healthDisplayYOffset) {
         this.healthDisplayYOffset = healthDisplayYOffset;
+    }
+
+    public void setInfoDisplayLocation(Vector infoDisplayLocation) {
+        this.infoDisplayLocation = infoDisplayLocation;
     }
 
     public void setGateNameDisplayMode(String gateNameDisplayMode) {

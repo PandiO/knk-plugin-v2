@@ -50,6 +50,7 @@ import net.knightsandkings.knk.paper.gates.PaperGateControlAdapter;
 import net.knightsandkings.knk.paper.gates.GateLoaderAdapter;
 import net.knightsandkings.knk.paper.gates.GateAnimationTask;
 import net.knightsandkings.knk.paper.gates.GateDisplayManager;
+import net.knightsandkings.knk.paper.gates.GateDisplayOrphanCleanupTask;
 import net.knightsandkings.knk.paper.gates.GateDisplayUpdateTask;
 import net.knightsandkings.knk.paper.gates.GateStateSyncTask;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
@@ -358,6 +359,13 @@ public class KnKPlugin extends JavaPlugin {
                     .runTaskTimer(this, 1L, 1L);
             }
             new GateDisplayUpdateTask(gateDisplayManager, gateManager).runTaskTimer(this, 20L, 20L);
+
+            int gateDisplayCleanupIntervalSeconds = getConfig().getInt("gates.display-cleanup-interval-seconds", 60);
+            long gateDisplayCleanupIntervalTicks = Math.max(20L, gateDisplayCleanupIntervalSeconds * 20L);
+            new GateDisplayOrphanCleanupTask(gateDisplayManager, gateManager)
+                .runTaskTimer(this, gateDisplayCleanupIntervalTicks, gateDisplayCleanupIntervalTicks);
+            getLogger().info("Gate display orphan cleanup scheduled (interval=" + gateDisplayCleanupIntervalSeconds + "s)");
+
             getLogger().info("Registered gate event listener, animation tasks, and display refresh task for " + getServer().getWorlds().size() + " world(s)");
             gateStateSyncTask.start();
             

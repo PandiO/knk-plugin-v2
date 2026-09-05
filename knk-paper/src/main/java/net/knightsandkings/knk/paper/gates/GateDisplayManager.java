@@ -73,11 +73,16 @@ public class GateDisplayManager {
         }
 
         TextDisplay display = displays.get(gate.getId());
-        if (display == null || display.isDead() || !world.equals(display.getWorld())) {
+        // isValid() (not isDead()) is the reliable check here: a display whose chunk unloaded and
+        // later reloaded keeps a Java reference that is never "dead" but no longer represents the
+        // entity actually being rendered, so re-teleporting it silently does nothing and leaves the
+        // real, visible entity frozen with stale text - the duplicate/stuck displays from this bug.
+        if (display == null || !display.isValid() || !world.equals(display.getWorld())) {
             if (display != null) {
                 display.remove();
             }
             final int gateId = gate.getId();
+            removeDuplicateEntities(world, gateId);
             display = world.spawn(location, TextDisplay.class, entity -> configureDisplay(entity, gateId));
             displays.put(gate.getId(), display);
         } else {
@@ -85,6 +90,20 @@ public class GateDisplayManager {
         }
 
         display.text(text);
+    }
+
+    /**
+     * Remove any leftover TextDisplay entities tagged for this gate that our tracking map doesn't
+     * know about (e.g. a stale entity orphaned by a chunk unload/reload cycle - see {@link #syncDisplay}).
+     * Called right before spawning a replacement so a respawn never leaves an old copy behind.
+     */
+    private void removeDuplicateEntities(World world, int gateId) {
+        for (TextDisplay entity : world.getEntitiesByClass(TextDisplay.class)) {
+            Integer taggedId = entity.getPersistentDataContainer().get(gateIdKey, PersistentDataType.INTEGER);
+            if (taggedId != null && taggedId == gateId) {
+                entity.remove();
+            }
+        }
     }
 
     private void configureDisplay(TextDisplay entity, int gateId) {
@@ -103,6 +122,19 @@ public class GateDisplayManager {
         if (display != null && !display.isDead()) {
             display.remove();
         }
+    }
+
+    /**
+     * Runtime repair pass: re-run {@link #cleanupOrphans} against every currently loaded world and
+     * refresh the survivors. Unlike the startup-only cleanup, this is safe to call repeatedly while
+     * the server is running, so a duplicate/orphaned display created after startup (e.g. by a chunk
+     * unload/reload) gets removed without needing a restart. Must run on the main thread.
+     */
+    public void repairOrphans(GateManager gateManager) {
+        for (World world : Bukkit.getServer().getWorlds()) {
+            cleanupOrphans(world, gateManager);
+        }
+        syncAll(gateManager);
     }
 
     /**
@@ -137,9 +169,20 @@ public class GateDisplayManager {
             if (gateManager.getGate(gateId) == null) {
                 entity.remove();
                 LOGGER.info("Removed orphaned gate display entity for gate ID " + gateId);
-            } else {
-                displays.put(gateId, entity);
+                continue;
             }
+
+            TextDisplay alreadyAdopted = displays.get(gateId);
+            if (alreadyAdopted != null && alreadyAdopted.isValid() && !alreadyAdopted.equals(entity)) {
+                // A display for this gate was already adopted (this world or an earlier one in the
+                // scan) - remove the extra instead of silently overwriting the map entry and leaking
+                // it as an untracked, never-updated duplicate.
+                entity.remove();
+                LOGGER.info("Removed duplicate gate display entity for gate ID " + gateId);
+                continue;
+            }
+
+            displays.put(gateId, entity);
         }
     }
 
@@ -151,37 +194,80 @@ public class GateDisplayManager {
         return Bukkit.getWorld(worldName);
     }
 
+    /** How far above the door's geometric center the display floats. */
+    private static final double ABOVE_CENTER_OFFSET = 1.0;
+    /** How far out along FaceDirection the display is pushed, so it clears the door blocks instead
+     *  of rendering inside them (see docs/features/gate-structure-animation/REQUIREMENTS.md, "FaceDirection Values"). */
+    private static final double FACE_DIRECTION_OFFSET = 0.7;
+
     /**
-     * Width/Depth are measured along the gate's local u/n basis (see
+     * If the gate has an admin-configured InfoDisplayLocation, that position is used as-is and none
+     * of the computation below runs. Otherwise the position is derived from the gate's geometry and
+     * FaceDirection:
+     *
+     * Width/Height are measured along the gate's local u/v basis (see
      * {@code GateFrameCalculator.isWithinGeometryBounds}, which projects world positions onto
      * uAxis/vAxis/nAxis and compares against Width/Height/Depth) - that basis is derived from
      * AnchorPoint/ReferencePoint1/ReferencePoint2 by {@code GateLoaderAdapter.precomputeBasisVectors}
      * and accounts for diagonal FaceDirections. Offsetting along world X/Z instead only happens to
      * be correct for axis-aligned (north/south/east/west) gates and places the display off to the
      * side for a diagonally-facing (e.g. north-east) gate.
+     *
+     * Depth deliberately uses FaceDirection for both the half-depth centering and the clearance
+     * push below, rather than the gate's auto-derived nAxis ({@code cross(uAxis, vAxis)}, whose
+     * sign depends on how ReferencePoint1/2 happen to be ordered and isn't guaranteed to agree with
+     * FaceDirection). Mixing the two risked the two offsets partially cancelling - or for a thin
+     * (1-2 block deep) gate, cancelling past the anchor entirely - landing the display back inside
+     * the door/wall blocks and making it fully invisible, exactly what this method used to do.
      */
     private Location calculateDisplayLocation(CachedGate gate, World world) {
+        Vector manualOverride = gate.getInfoDisplayLocation();
+        if (manualOverride != null) {
+            return new Location(world, manualOverride.getX(), manualOverride.getY(), manualOverride.getZ());
+        }
+
         Vector anchor = gate.getAnchorPoint();
         if (anchor == null) {
             return null;
         }
 
         Vector uAxis = gate.getUAxis();
-        Vector nAxis = gate.getNAxis();
+        Vector vAxis = gate.getVAxis();
+        Vector faceDirection = resolveFaceDirectionVector(gate);
 
         Vector widthOffset = uAxis != null && uAxis.lengthSquared() > 0
             ? uAxis.clone().multiply(gate.getGeometryWidth() / 2.0)
             : new Vector(gate.getGeometryWidth() / 2.0, 0, 0);
-        Vector depthOffset = nAxis != null && nAxis.lengthSquared() > 0
-            ? nAxis.clone().multiply(gate.getGeometryDepth() / 2.0)
-            : new Vector(0, 0, gate.getGeometryDepth() / 2.0);
+        Vector heightOffset = vAxis != null && vAxis.lengthSquared() > 0
+            ? vAxis.clone().multiply(gate.getGeometryHeight() / 2.0)
+            : new Vector(0, gate.getGeometryHeight() / 2.0, 0);
 
+        // Center of the door (anchor + half width/height + half depth along FaceDirection), then 1
+        // block up and a further 0.7 blocks out along that same FaceDirection so the text clears
+        // the door blocks instead of rendering inside them.
+        double depthPush = gate.getGeometryDepth() / 2.0 + FACE_DIRECTION_OFFSET;
         Vector position = anchor.clone()
             .add(widthOffset)
-            .add(depthOffset)
-            .add(new Vector(0, gate.getHealthDisplayYOffset(), 0));
+            .add(heightOffset)
+            .add(new Vector(0, ABOVE_CENTER_OFFSET, 0))
+            .add(faceDirection.multiply(depthPush));
 
         return new Location(world, position.getX(), position.getY(), position.getZ());
+    }
+
+    /** FaceDirection as a world-space unit vector, falling back to the gate's precomputed normal axis. */
+    private Vector resolveFaceDirectionVector(CachedGate gate) {
+        Vector faceDirection = EntityPusher.vectorFromFaceDirection(gate.getFaceDirection());
+        if (faceDirection != null && faceDirection.lengthSquared() > 0) {
+            return faceDirection;
+        }
+
+        Vector nAxis = gate.getNAxis();
+        if (nAxis != null && nAxis.lengthSquared() > 0) {
+            return nAxis.clone();
+        }
+
+        return new Vector(0, 0, 0);
     }
 
     private Component buildDisplayText(CachedGate gate) {

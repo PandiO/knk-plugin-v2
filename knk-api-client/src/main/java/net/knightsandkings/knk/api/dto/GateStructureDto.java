@@ -169,6 +169,12 @@ public class GateStructureDto {
     @JsonProperty("healthDisplayYOffset")
     private Integer healthDisplayYOffset;
 
+    // Optional manual override for where the info hover renders; falls back to the computed
+    // FaceDirection-based position (see GateDisplayManager) when absent.
+    @JsonProperty("infoDisplayLocation")
+    @JsonDeserialize(using = CoordinateStringDeserializer.class)
+    private String infoDisplayLocation;
+
     @JsonProperty("gateNameDisplayMode")
     private String gateNameDisplayMode;
 
@@ -543,6 +549,14 @@ public class GateStructureDto {
 
     public void setHealthDisplayYOffset(Integer healthDisplayYOffset) {
         this.healthDisplayYOffset = healthDisplayYOffset;
+    }
+
+    public String getInfoDisplayLocation() {
+        return infoDisplayLocation;
+    }
+
+    public void setInfoDisplayLocation(String infoDisplayLocation) {
+        this.infoDisplayLocation = infoDisplayLocation;
     }
 
     public String getGateNameDisplayMode() {
