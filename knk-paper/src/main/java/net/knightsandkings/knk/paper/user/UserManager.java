@@ -10,6 +10,7 @@ import net.knightsandkings.knk.api.dto.CreateUserRequestDto;
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
 import net.knightsandkings.knk.core.cache.UserCache;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.domain.users.UserSummary;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
@@ -196,7 +197,8 @@ public class UserManager {
                 response.gems() != null ? response.gems() : 0,
                 response.experiencePoints() != null ? response.experiencePoints() : 0,
                 false,  // isFullAccount - new users don't have email/password yet
-                true    // isNewUser - we just created this account
+                true,   // isNewUser - we just created this account
+                GatePassThroughMethod.DEFAULT
             );
             
             // Update legacy cache for PlayerListener compatibility
@@ -226,7 +228,8 @@ public class UserManager {
             response.experiencePoints() != null ? response.experiencePoints() : 0,
             response.email() != null && !response.email().isBlank(),
             false,  // no duplicate if we got here
-            null
+            null,
+            GatePassThroughMethod.DEFAULT
         );
     }
 
@@ -241,7 +244,8 @@ public class UserManager {
             summary.experiencePoints(),
             summary.isFullAccount(),  // Use isFullAccount from API
             false,
-            null
+            null,
+            summary.gatePassThroughMethodDefault()
         );
     }
     

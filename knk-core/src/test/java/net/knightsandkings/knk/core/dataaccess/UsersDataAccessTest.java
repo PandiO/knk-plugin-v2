@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import net.knightsandkings.knk.core.cache.UserCache;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.domain.users.UserDetail;
 import net.knightsandkings.knk.core.domain.users.UserSummary;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
@@ -245,6 +246,11 @@ public class UsersDataAccessTest {
         public CompletableFuture<UserDetail> create(UserDetail user) {
             // Return the user that was passed in (simulating creation)
             return CompletableFuture.completedFuture(user);
+        }
+
+        @Override
+        public CompletableFuture<Void> setGatePassThroughMethodById(int id, GatePassThroughMethod method) {
+            return CompletableFuture.completedFuture(null);
         }
     }
 }

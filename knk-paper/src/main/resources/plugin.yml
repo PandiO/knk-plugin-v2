@@ -38,13 +38,23 @@ permissions:
   knk.gate.close.*:
     description: Permission to close any gate
     default: false
-    
+
+  knk.gate.passthrough.use:
+    description: Base permission to trigger any gate pass-through mode by right-clicking a closed, pass-through-enabled gate
+    default: false
+
+  knk.gate.passthrough.instant:
+    description: Extra permission required to use the InstantOpen gate pass-through mode
+    default: false
+
   knk.gate.admin:
-    description: Permission to use admin gate commands
+    description: Permission to use admin gate commands. Also grants full, unconditional gate pass-through access (bypasses AllowPassThrough and mode permissions).
     default: op
     children:
       knk.gate.open.*: true
       knk.gate.close.*: true
+      knk.gate.passthrough.use: true
+      knk.gate.passthrough.instant: true
 
   # Account management permissions (Phase 4+)
   knk.account.use:

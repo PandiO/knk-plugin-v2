@@ -2,6 +2,8 @@ package net.knightsandkings.knk.paper.user;
 
 import java.util.UUID;
 
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
+
 /**
  * Immutable record representing a player's account data cached during their session.
  * This data is fetched from the API on player join and updated when account operations occur.
@@ -64,7 +66,13 @@ public record PlayerUserData(
     /**
      * ID of the conflicting/duplicate account (if any).
      */
-    Integer conflictingUserId
+    Integer conflictingUserId,
+
+    /**
+     * This player's preferred gate pass-through method, settable in-game via
+     * /knk gate passthrough &lt;mode&gt;.
+     */
+    GatePassThroughMethod gatePassThroughMethodDefault
 ) {
     /**
      * Create a minimal user data entry (used when creating a new user without email).
@@ -80,16 +88,17 @@ public record PlayerUserData(
             0,           // 0 exp
             false,       // no email linked
             false,       // no duplicate
-            null         // no conflicting user
+            null,        // no conflicting user
+            GatePassThroughMethod.DEFAULT
         );
     }
-    
+
     /**
      * Create user data with duplicate conflict information.
      */
     public static PlayerUserData withConflict(
-        UUID uuid, 
-        String username, 
+        UUID uuid,
+        String username,
         Integer userId,
         Integer conflictingUserId
     ) {
@@ -103,10 +112,11 @@ public record PlayerUserData(
             0,
             false,
             true,        // has duplicate
-            conflictingUserId
+            conflictingUserId,
+            GatePassThroughMethod.DEFAULT
         );
     }
-    
+
     /**
      * Create a copy with updated email-linked status.
      */
@@ -121,10 +131,11 @@ public record PlayerUserData(
             experiencePoints,
             true,        // email now linked
             hasDuplicateAccount,
-            conflictingUserId
+            conflictingUserId,
+            gatePassThroughMethodDefault
         );
     }
-    
+
     /**
      * Create a copy with updated balances (after merge).
      */
@@ -139,7 +150,27 @@ public record PlayerUserData(
             experiencePoints,
             hasEmailLinked,
             false,       // merge resolves duplicates
-            null         // no conflict after merge
+            null,        // no conflict after merge
+            gatePassThroughMethodDefault
+        );
+    }
+
+    /**
+     * Create a copy with an updated pass-through method preference (after /knk gate passthrough).
+     */
+    public PlayerUserData withGatePassThroughMethodDefault(GatePassThroughMethod gatePassThroughMethodDefault) {
+        return new PlayerUserData(
+            userId,
+            username,
+            uuid,
+            email,
+            coins,
+            gems,
+            experiencePoints,
+            hasEmailLinked,
+            hasDuplicateAccount,
+            conflictingUserId,
+            gatePassThroughMethodDefault
         );
     }
 }

@@ -5,18 +5,22 @@ import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
 import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorIgniteEvent;
 import net.knightsandkings.knk.paper.events.GateDoorInteractEvent;
 import net.knightsandkings.knk.paper.listeners.GateEventListener;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Fireball;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -219,6 +223,149 @@ class GateEventListenerTest {
         verify(pluginManager, never()).callEvent(any());
     }
 
+    @Test
+    void flamingArrowHitAlsoIgnitesTheDoorBlock() {
+        Block block = doorBlock();
+        LivingEntity shooter = mock(LivingEntity.class);
+        Projectile projectile = mock(Projectile.class);
+        when(projectile.getShooter()).thenReturn(shooter);
+        when(projectile.getFireTicks()).thenReturn(100);
+
+        ProjectileHitEvent event = mock(ProjectileHitEvent.class);
+        when(event.getHitBlock()).thenReturn(block);
+        when(event.getEntity()).thenReturn(projectile);
+
+        listener.onProjectileHit(event);
+
+        ArgumentCaptor<org.bukkit.event.Event> captor = ArgumentCaptor.forClass(org.bukkit.event.Event.class);
+        verify(pluginManager, times(2)).callEvent(captor.capture());
+        assertTrue(captor.getAllValues().stream().anyMatch(GateDoorDamageEvent.class::isInstance));
+
+        GateDoorIgniteEvent igniteEvent = captor.getAllValues().stream()
+            .filter(GateDoorIgniteEvent.class::isInstance)
+            .map(GateDoorIgniteEvent.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertEquals(GateDoorIgniteEvent.Cause.FLAMING_PROJECTILE, igniteEvent.getCause());
+        assertSame(shooter, igniteEvent.getCausingEntity());
+    }
+
+    @Test
+    void fireChargeHitIgnitesTheDoorBlock() {
+        Block block = doorBlock();
+        LivingEntity shooter = mock(LivingEntity.class);
+        Fireball fireball = mock(Fireball.class);
+        when(fireball.getShooter()).thenReturn(shooter);
+
+        ProjectileHitEvent event = mock(ProjectileHitEvent.class);
+        when(event.getHitBlock()).thenReturn(block);
+        when(event.getEntity()).thenReturn(fireball);
+
+        listener.onProjectileHit(event);
+
+        ArgumentCaptor<org.bukkit.event.Event> captor = ArgumentCaptor.forClass(org.bukkit.event.Event.class);
+        verify(pluginManager, times(2)).callEvent(captor.capture());
+
+        GateDoorIgniteEvent igniteEvent = captor.getAllValues().stream()
+            .filter(GateDoorIgniteEvent.class::isInstance)
+            .map(GateDoorIgniteEvent.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertEquals(GateDoorIgniteEvent.Cause.FIRE_CHARGE, igniteEvent.getCause());
+    }
+
+    // ===== BlockIgniteEvent =====
+
+    @Test
+    void flintAndSteelOnAdjacentAirBlockIgnitesTheActualDoorBlockInstead() {
+        // Flint and steel sets fire on the AIR block adjacent to the face clicked, not the
+        // clicked block itself - simulate that by igniting a neighbor of the door block and
+        // wiring its WEST neighbor to resolve back to the door block.
+        Block doorBlock = doorBlock();
+        Block ignitedAirBlock = unrelatedBlock();
+        when(ignitedAirBlock.getRelative(BlockFace.WEST)).thenReturn(doorBlock);
+        Player player = mock(Player.class);
+
+        BlockIgniteEvent event = mock(BlockIgniteEvent.class);
+        when(event.getBlock()).thenReturn(ignitedAirBlock);
+        when(event.getCause()).thenReturn(BlockIgniteEvent.IgniteCause.FLINT_AND_STEEL);
+        when(event.getPlayer()).thenReturn(player);
+
+        listener.onBlockIgnite(event);
+
+        verify(event).setCancelled(true);
+        ArgumentCaptor<GateDoorIgniteEvent> captor = ArgumentCaptor.forClass(GateDoorIgniteEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertEquals(GateDoorIgniteEvent.Cause.FLINT_AND_STEEL, captor.getValue().getCause());
+        assertSame(doorBlock, captor.getValue().getHitBlock());
+        assertSame(player, captor.getValue().getCausingEntity());
+    }
+
+    @Test
+    void blockIgniteDirectlyOnADoorBlockIsAlsoRedirectedThroughGateFire() {
+        // Covers a flammable gate material where vanilla would ignite the door block itself.
+        Block doorBlock = doorBlock();
+
+        BlockIgniteEvent event = mock(BlockIgniteEvent.class);
+        when(event.getBlock()).thenReturn(doorBlock);
+        when(event.getCause()).thenReturn(BlockIgniteEvent.IgniteCause.FLINT_AND_STEEL);
+
+        listener.onBlockIgnite(event);
+
+        verify(event).setCancelled(true);
+        ArgumentCaptor<GateDoorIgniteEvent> captor = ArgumentCaptor.forClass(GateDoorIgniteEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertSame(doorBlock, captor.getValue().getHitBlock());
+    }
+
+    @Test
+    void fireballBlockIgniteOnAdjacentAirBlockIgnitesTheDoorBlock() {
+        Block doorBlock = doorBlock();
+        Block ignitedAirBlock = unrelatedBlock();
+        when(ignitedAirBlock.getRelative(BlockFace.UP)).thenReturn(doorBlock);
+
+        BlockIgniteEvent event = mock(BlockIgniteEvent.class);
+        when(event.getBlock()).thenReturn(ignitedAirBlock);
+        when(event.getCause()).thenReturn(BlockIgniteEvent.IgniteCause.FIREBALL);
+
+        listener.onBlockIgnite(event);
+
+        verify(event).setCancelled(true);
+        ArgumentCaptor<GateDoorIgniteEvent> captor = ArgumentCaptor.forClass(GateDoorIgniteEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertEquals(GateDoorIgniteEvent.Cause.FIRE_CHARGE, captor.getValue().getCause());
+    }
+
+    @Test
+    void blockIgniteUnrelatedToAnyGateIsIgnored() {
+        Block ignitedAirBlock = unrelatedBlock();
+
+        BlockIgniteEvent event = mock(BlockIgniteEvent.class);
+        when(event.getBlock()).thenReturn(ignitedAirBlock);
+        when(event.getCause()).thenReturn(BlockIgniteEvent.IgniteCause.FLINT_AND_STEEL);
+
+        listener.onBlockIgnite(event);
+
+        verify(event, never()).setCancelled(anyBoolean());
+        verify(pluginManager, never()).callEvent(any());
+    }
+
+    @Test
+    void blockIgniteFromLavaIsIgnoredEvenNextToADoorBlock() {
+        Block doorBlock = doorBlock();
+        Block ignitedAirBlock = unrelatedBlock();
+        when(ignitedAirBlock.getRelative(BlockFace.WEST)).thenReturn(doorBlock);
+
+        BlockIgniteEvent event = mock(BlockIgniteEvent.class);
+        when(event.getBlock()).thenReturn(ignitedAirBlock);
+        when(event.getCause()).thenReturn(BlockIgniteEvent.IgniteCause.LAVA);
+
+        listener.onBlockIgnite(event);
+
+        verify(event, never()).setCancelled(anyBoolean());
+        verify(pluginManager, never()).callEvent(any());
+    }
+
     // ===== PlayerInteractEvent =====
 
     @Test
@@ -244,7 +391,10 @@ class GateEventListenerTest {
     }
 
     @Test
-    void rightClickWithoutPermissionIsDenied() {
+    void rightClickWithoutOpenClosePermissionStillFiresInteractEvent() {
+        // knk.gate.open.*/close.* gate the manual /knk gate open|close commands, not pass-through
+        // detection - GatePassThroughConsequenceListener is the one that checks pass-through
+        // permissions, once the event fires. Detection itself is permission-agnostic.
         Block block = doorBlock();
         Player player = mock(Player.class);
         when(player.hasPermission("knk.gate.open.*")).thenReturn(false);
@@ -257,8 +407,8 @@ class GateEventListenerTest {
 
         listener.onPlayerInteract(event);
 
-        verify(event).setCancelled(true);
-        verify(pluginManager, never()).callEvent(any());
+        verify(pluginManager).callEvent(any(GateDoorInteractEvent.class));
+        verify(event, never()).setCancelled(true);
     }
 
     @Test

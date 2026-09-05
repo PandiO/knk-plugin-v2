@@ -13,9 +13,11 @@ import net.knightsandkings.knk.core.ports.api.DistrictsQueryApi;
 import net.knightsandkings.knk.core.ports.api.StreetsQueryApi;
 import net.knightsandkings.knk.core.ports.api.WorldTasksApi;
 import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
 import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.paper.tasks.WorldTaskHandlerRegistry;
 import net.knightsandkings.knk.paper.cache.CacheManager;
+import net.knightsandkings.knk.paper.user.UserManager;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.ChatColor;
@@ -75,6 +77,8 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
             WorldTaskHandlerRegistry worldTaskHandlerRegistry,
             GateManager gateManager,
             GateStructuresApi gateStructuresApi,
+            UserManager userManager,
+            UsersCommandApi usersCommandApi,
             String serverId
     ) {
                 this.plugin = plugin;
@@ -254,10 +258,10 @@ public class KnkAdminCommand implements CommandExecutor, TabCompleter {
                 (sender, args) -> taskStatusCommand.onCommand(sender, null, "knk", args)
         );
 
-        GateCommand gateCommand = new GateCommand(gateManager, gateStructuresApi);
+        GateCommand gateCommand = new GateCommand(gateManager, gateStructuresApi, userManager, usersCommandApi);
         registry.register(
-                new CommandMetadata("gate", "Control and inspect gate structures", "/knk gate <open|close|info|list|admin>", null,
-                        List.of("/knk gate list", "/knk gate info <name>", "/knk gate open <name>")),
+                new CommandMetadata("gate", "Control and inspect gate structures", "/knk gate <open|close|info|list|passthrough|admin>", null,
+                        List.of("/knk gate list", "/knk gate info <name>", "/knk gate open <name>", "/knk gate passthrough <default|instant|teleport>")),
                 (sender, args) -> gateCommand.onCommand(sender, null, "knk", args)
         );
         

@@ -84,12 +84,17 @@ public class CachedGate {
     // === Siege Integration ===
     private Integer currentSiegeId;
 
+    // === Pass-Through ===
+    private boolean allowPassThrough;
+    private int passThroughDurationSeconds = 2;
+
     // === Continuous Damage (Fire) ===
     // World-block position (integer-valued Vector) -> epoch millis when the fire on that block
     // expires. Populated by GateFireSystem.igniteBlock, drained by GateFireSystem.tick. Only
     // meaningful while CLOSED - that's the only state where a door block's world position is
     // stable enough for a burn to track a specific cell.
     private final Map<Vector, Long> burningBlocks = new HashMap<>();
+
     public CachedGate(int id, String name, String gateType, String motionType, String geometryDefinitionMode,
                       int animationDurationTicks, int animationTickRate,
                       Vector anchorPoint, int geometryWidth, int geometryHeight, int geometryDepth,
@@ -299,6 +304,14 @@ public class CachedGate {
         return currentSiegeId;
     }
 
+    public boolean isAllowPassThrough() {
+        return allowPassThrough;
+    }
+
+    public int getPassThroughDurationSeconds() {
+        return passThroughDurationSeconds;
+    }
+
     // === Setters for Mutable State ===
 
     public void setCurrentState(AnimationState currentState) {
@@ -387,6 +400,14 @@ public class CachedGate {
 
     public void setCurrentSiegeId(Integer currentSiegeId) {
         this.currentSiegeId = currentSiegeId;
+    }
+
+    public void setAllowPassThrough(boolean allowPassThrough) {
+        this.allowPassThrough = allowPassThrough;
+    }
+
+    public void setPassThroughDurationSeconds(int passThroughDurationSeconds) {
+        this.passThroughDurationSeconds = passThroughDurationSeconds;
     }
 
     // === Setters for Precomputed Data ===

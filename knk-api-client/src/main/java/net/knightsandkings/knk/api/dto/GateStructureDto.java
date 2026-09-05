@@ -188,6 +188,13 @@ public class GateStructureDto {
     @JsonProperty("currentSiegeId")
     private Integer currentSiegeId;
 
+    // === Pass-Through ===
+    @JsonProperty("allowPassThrough")
+    private Boolean allowPassThrough;
+
+    @JsonProperty("passThroughDurationSeconds")
+    private Integer passThroughDurationSeconds;
+
     // === Block Snapshots ===
     @JsonProperty("blockSnapshots")
     private List<GateBlockSnapshotDto> blockSnapshots;
@@ -592,6 +599,22 @@ public class GateStructureDto {
 
     public void setCurrentSiegeId(Integer currentSiegeId) {
         this.currentSiegeId = currentSiegeId;
+    }
+
+    public Boolean getAllowPassThrough() {
+        return allowPassThrough;
+    }
+
+    public void setAllowPassThrough(Boolean allowPassThrough) {
+        this.allowPassThrough = allowPassThrough;
+    }
+
+    public Integer getPassThroughDurationSeconds() {
+        return passThroughDurationSeconds;
+    }
+
+    public void setPassThroughDurationSeconds(Integer passThroughDurationSeconds) {
+        this.passThroughDurationSeconds = passThroughDurationSeconds;
     }
 
     public List<GateBlockSnapshotDto> getBlockSnapshots() {

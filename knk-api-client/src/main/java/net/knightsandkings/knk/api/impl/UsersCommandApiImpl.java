@@ -10,9 +10,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import net.knightsandkings.knk.api.auth.AuthProvider;
 import net.knightsandkings.knk.api.dto.CoinsUpdateDto;
+import net.knightsandkings.knk.api.dto.GatePassThroughMethodUpdateDto;
 import net.knightsandkings.knk.api.dto.UserCreateDto;
 import net.knightsandkings.knk.api.dto.UserDto;
 import net.knightsandkings.knk.api.mapper.UsersMapper;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.domain.users.UserDetail;
 import net.knightsandkings.knk.core.exception.ApiException;
 import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
@@ -63,6 +65,21 @@ public class UsersCommandApiImpl extends BaseApiImpl implements UsersCommandApi 
                 return null;
             } catch (ApiException | IOException e) {
                 throw new RuntimeException("Failed to set coins by UUID", e);
+            }
+        }, executor);
+    }
+
+    @Override
+    public CompletableFuture<Void> setGatePassThroughMethodById(int id, GatePassThroughMethod method) {
+        return CompletableFuture.supplyAsync(() -> {
+            String url = baseUrl + USERS_ENDPOINT + "/" + id + "/gate-passthrough-method";
+            try {
+                String bodyJson = objectMapper.writeValueAsString(
+                    new GatePassThroughMethodUpdateDto(method.toWireValue()));
+                putJson(url, bodyJson);
+                return null;
+            } catch (ApiException | IOException e) {
+                throw new RuntimeException("Failed to set gate pass-through method", e);
             }
         }, executor);
     }

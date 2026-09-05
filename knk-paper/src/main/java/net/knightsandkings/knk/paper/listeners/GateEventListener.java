@@ -224,8 +224,11 @@ public class GateEventListener implements Listener {
     }
 
     /**
-     * Handle player interact events on gate door blocks: right-click for the (future)
-     * pass-through feature, left-click punch as a melee damage source.
+     * Handle player interact events on gate door blocks: right-click fires GateDoorInteractEvent
+     * (consumed by GatePassThroughConsequenceListener, which owns the pass-through permission
+     * check - knk.gate.open and knk.gate.close are for the manual /knk gate open|close commands
+     * and are unrelated to pass-through, so they no longer gate detection here), left-click punch
+     * as a melee damage source.
      */
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onPlayerInteract(PlayerInteractEvent event) {
@@ -242,16 +245,6 @@ public class GateEventListener implements Listener {
         Player player = event.getPlayer();
 
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            if (!player.hasPermission("knk.gate.open.*") &&
-                !player.hasPermission("knk.gate.close.*")) {
-                player.sendMessage(
-                    Component.text("You don't have permission to interact with this gate.")
-                        .color(NamedTextColor.RED)
-                );
-                event.setCancelled(true);
-                return;
-            }
-
             GateDoorInteractEvent interactEvent = hitService.handleInteract(gate, player, clickedBlock);
             if (interactEvent != null && interactEvent.isCancelled()) {
                 event.setCancelled(true);

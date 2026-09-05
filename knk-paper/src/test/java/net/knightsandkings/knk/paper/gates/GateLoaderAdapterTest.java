@@ -62,6 +62,57 @@ class GateLoaderAdapterTest {
     }
 
     @Test
+    void loadAndCacheGate_MapsPassThroughFields() {
+        GateManager gateManager = new GateManager();
+        GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
+
+        GateStructureDto dto = new GateStructureDto();
+        dto.setId(2);
+        dto.setName("PassThrough Gate");
+        dto.setGateType("SLIDING");
+        dto.setMotionType("VERTICAL");
+        dto.setGeometryDefinitionMode("PLANE_GRID");
+        dto.setAnimationDurationTicks(60);
+        dto.setAnimationTickRate(1);
+        dto.setGeometryDepth(1);
+        dto.setAnchorPoint("{\"x\":0,\"y\":0,\"z\":0}");
+        dto.setAllowPassThrough(true);
+        dto.setPassThroughDurationSeconds(6);
+
+        adapter.loadAndCacheGate(dto, new ArrayList<>());
+
+        CachedGate gate = gateManager.getGate(2);
+        assertNotNull(gate);
+        assertTrue(gate.isAllowPassThrough());
+        assertEquals(6, gate.getPassThroughDurationSeconds());
+    }
+
+    @Test
+    void loadAndCacheGate_DefaultsPassThroughFieldsWhenAbsentFromDto() {
+        GateManager gateManager = new GateManager();
+        GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
+
+        GateStructureDto dto = new GateStructureDto();
+        dto.setId(3);
+        dto.setName("Legacy Gate");
+        dto.setGateType("SLIDING");
+        dto.setMotionType("VERTICAL");
+        dto.setGeometryDefinitionMode("PLANE_GRID");
+        dto.setAnimationDurationTicks(60);
+        dto.setAnimationTickRate(1);
+        dto.setGeometryDepth(1);
+        dto.setAnchorPoint("{\"x\":0,\"y\":0,\"z\":0}");
+        // allowPassThrough/passThroughDurationSeconds intentionally left unset
+
+        adapter.loadAndCacheGate(dto, new ArrayList<>());
+
+        CachedGate gate = gateManager.getGate(3);
+        assertNotNull(gate);
+        assertFalse(gate.isAllowPassThrough());
+        assertEquals(2, gate.getPassThroughDurationSeconds());
+    }
+
+    @Test
     void loadAndCacheGate_ComputesBasisVectorsForDiagonalFaceDirection() {
         // High-risk case flagged in the roadmap (docs/features/gate-structure-animation/
         // IMPLEMENTATION_ROADMAP.md, Risk Management: "Diagonal Gate Geometry Calculation"):

@@ -2,7 +2,10 @@ package net.knightsandkings.knk.paper.listeners;
 
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorIgniteEvent;
+import net.knightsandkings.knk.paper.gates.GateFireSystem;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
+import org.bukkit.block.Block;
 import org.bukkit.util.Vector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,13 +18,15 @@ import static org.mockito.Mockito.*;
 class GateDamageConsequenceListenerTest {
 
     private HealthSystem healthSystem;
+    private GateFireSystem fireSystem;
     private GateDamageConsequenceListener listener;
     private CachedGate gate;
 
     @BeforeEach
     void setUp() {
         healthSystem = mock(HealthSystem.class);
-        listener = new GateDamageConsequenceListener(healthSystem);
+        fireSystem = mock(GateFireSystem.class);
+        listener = new GateDamageConsequenceListener(healthSystem, fireSystem);
 
         gate = new CachedGate(
             1, "TestGate", "SLIDING", "VERTICAL", "PLANE_GRID",
@@ -49,5 +54,28 @@ class GateDamageConsequenceListenerTest {
         listener.onGateDoorDamage(event);
 
         verifyNoInteractions(healthSystem);
+    }
+
+    @Test
+    void ignitesBlockForEachIgniteCause() {
+        Block hitBlock = mock(Block.class);
+
+        for (GateDoorIgniteEvent.Cause cause : GateDoorIgniteEvent.Cause.values()) {
+            GateDoorIgniteEvent event = new GateDoorIgniteEvent(gate, cause, null, hitBlock);
+
+            listener.onGateDoorIgnite(event);
+
+            verify(fireSystem, atLeastOnce()).igniteBlock(gate, hitBlock);
+        }
+    }
+
+    @Test
+    void skipsAlreadyCancelledIgniteEvents() {
+        GateDoorIgniteEvent event = new GateDoorIgniteEvent(gate, GateDoorIgniteEvent.Cause.FIRE_CHARGE, null, mock(Block.class));
+        event.setCancelled(true);
+
+        listener.onGateDoorIgnite(event);
+
+        verifyNoInteractions(fireSystem);
     }
 }

@@ -83,6 +83,12 @@ gates:
   fire-duration-seconds: 8
   fire-damage-per-tick: 2.0
   fire-tick-interval-seconds: 1
+  # Pass-through system: InstantOpen mode removes only the door blocks within
+  # passthrough-instant-open-radius-blocks of the triggering player's position (sideways, across
+  # the gate's full depth), restoring them once the player crosses to the far side or after
+  # passthrough-instant-open-timeout-seconds elapses (safety net if they turn back or disconnect).
+  passthrough-instant-open-radius-blocks: 1
+  passthrough-instant-open-timeout-seconds: 5
 
 # Messages configuration
 messages:

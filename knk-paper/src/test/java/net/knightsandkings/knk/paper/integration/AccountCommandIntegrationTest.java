@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 
 import net.knightsandkings.knk.api.dto.*;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
@@ -96,7 +97,7 @@ class AccountCommandIntegrationTest {
             // Arrange
             PlayerUserData userData = new PlayerUserData(
                 1, "TestPlayer", testUUID, null,
-                100, 50, 1000, false, false, null
+                100, 50, 1000, false, false, null, GatePassThroughMethod.DEFAULT
             );
             userManager.updateCachedUser(testUUID, userData);
             
@@ -128,7 +129,7 @@ class AccountCommandIntegrationTest {
             // Arrange
             PlayerUserData userData = new PlayerUserData(
                 1, "TestPlayer", testUUID, null,
-                100, 50, 1000, false, false, null
+                100, 50, 1000, false, false, null, GatePassThroughMethod.DEFAULT
             );
             userManager.updateCachedUser(testUUID, userData);
             
@@ -178,7 +179,7 @@ class AccountCommandIntegrationTest {
             // Arrange
             PlayerUserData userData = new PlayerUserData(
                 1, "TestPlayer", testUUID, null,
-                100, 50, 1000, false, false, null
+                100, 50, 1000, false, false, null, GatePassThroughMethod.DEFAULT
             );
             userManager.updateCachedUser(testUUID, userData);
             
@@ -208,7 +209,7 @@ class AccountCommandIntegrationTest {
             // Arrange
             PlayerUserData userData = new PlayerUserData(
                 1, "TestPlayer", testUUID, null,
-                100, 50, 1000, false, false, null
+                100, 50, 1000, false, false, null, GatePassThroughMethod.DEFAULT
             );
             userManager.updateCachedUser(testUUID, userData);
             
@@ -284,7 +285,7 @@ class AccountCommandIntegrationTest {
             // Arrange
             PlayerUserData userData = new PlayerUserData(
                 1, "TestPlayer", testUUID, null,
-                100, 50, 1000, false, false, null
+                100, 50, 1000, false, false, null, GatePassThroughMethod.DEFAULT
             );
             userManager.updateCachedUser(testUUID, userData);
             

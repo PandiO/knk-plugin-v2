@@ -10,5 +10,6 @@ public record UserSummaryDto (
     @JsonProperty("coins") int coins,
     @JsonProperty("gems") int gems,
     @JsonProperty("experiencePoints") int experiencePoints,
-    @JsonProperty("isFullAccount") boolean isFullAccount
+    @JsonProperty("isFullAccount") boolean isFullAccount,
+    @JsonProperty("gatePassThroughMethodDefault") String gatePassThroughMethodDefault
 ) {}

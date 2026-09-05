@@ -131,6 +131,9 @@ public class GateLoaderAdapter {
         gate.setGateNameDisplayMode(dto.getGateNameDisplayMode());
         gate.setStatusDisplayMode(dto.getStatusDisplayMode());
         gate.setCurrentSiegeId(dto.getCurrentSiegeId());
+        gate.setAllowPassThrough(Boolean.TRUE.equals(dto.getAllowPassThrough()));
+        gate.setPassThroughDurationSeconds(
+            dto.getPassThroughDurationSeconds() != null ? dto.getPassThroughDurationSeconds() : 2);
 
         // Precompute local basis vectors
         precomputeBasisVectors(gate, dto);

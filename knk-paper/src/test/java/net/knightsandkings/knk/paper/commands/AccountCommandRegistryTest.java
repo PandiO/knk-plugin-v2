@@ -1,5 +1,6 @@
 package net.knightsandkings.knk.paper.commands;
 
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
@@ -68,7 +69,8 @@ class AccountCommandRegistryTest {
             100,
             true,
             false,
-            null
+            null,
+            GatePassThroughMethod.DEFAULT
         );
         when(userManager.getCachedUser(uuid)).thenReturn(userData);
 

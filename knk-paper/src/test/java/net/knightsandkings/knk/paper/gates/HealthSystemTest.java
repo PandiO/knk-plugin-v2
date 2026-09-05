@@ -93,6 +93,65 @@ public class HealthSystemTest {
     }
 
     @Test
+    public void testApplyContinuousDamageReducesHealth() {
+        // Unlike applyDamage, the non-lethal path never touches BukkitRunnable (no per-tick
+        // persistence - see HealthSystem.applyContinuousDamage), so this can run un-Disabled.
+        CachedGate gate = createTestGate();
+        gate.setIsInvincible(false);
+        gate.setHealthCurrent(100.0);
+
+        healthSystem.applyContinuousDamage(gate, 6.0);
+
+        assertEquals(94.0, gate.getHealthCurrent(), 0.1);
+    }
+
+    @Test
+    public void testApplyContinuousDamageIgnoredWhenInvincible() {
+        CachedGate gate = createTestGate();
+        gate.setIsInvincible(true);
+        gate.setHealthCurrent(100.0);
+
+        healthSystem.applyContinuousDamage(gate, 6.0);
+
+        assertEquals(100.0, gate.getHealthCurrent(), 0.1);
+    }
+
+    @Test
+    public void testApplyContinuousDamageIgnoredWhenAlreadyDestroyed() {
+        CachedGate gate = createTestGate();
+        gate.setIsDestroyed(true);
+        gate.setHealthCurrent(0.0);
+
+        healthSystem.applyContinuousDamage(gate, 6.0);
+
+        assertEquals(0.0, gate.getHealthCurrent(), 0.1);
+    }
+
+    @Test
+    public void testApplyContinuousDamageIgnoresNonPositiveAmount() {
+        CachedGate gate = createTestGate();
+        gate.setHealthCurrent(50.0);
+
+        healthSystem.applyContinuousDamage(gate, 0.0);
+        healthSystem.applyContinuousDamage(gate, -5.0);
+
+        assertEquals(50.0, gate.getHealthCurrent(), 0.1);
+    }
+
+    @Test
+    @Disabled("Requires Bukkit runtime for BukkitRunnable (destroyGate path)")
+    public void testApplyContinuousDamageDestroysGateAtZeroHealth() {
+        CachedGate gate = createTestGate();
+        gate.setIsInvincible(false);
+        gate.setHealthCurrent(5.0);
+
+        healthSystem.applyContinuousDamage(gate, 10.0);
+
+        assertTrue(gate.isDestroyed());
+        assertEquals(0.0, gate.getHealthCurrent(), 0.1);
+    }
+
+    @Test
     @Disabled("Requires Bukkit runtime for BukkitRunnable")
     public void testDestroyGateUpdatesState() {
         CachedGate gate = createTestGate();

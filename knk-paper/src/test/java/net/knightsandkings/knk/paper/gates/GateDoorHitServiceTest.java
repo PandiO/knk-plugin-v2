@@ -5,6 +5,7 @@ import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
 import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorIgniteEvent;
 import net.knightsandkings.knk.paper.events.GateDoorInteractEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -153,5 +154,38 @@ class GateDoorHitServiceTest {
 
         assertNotNull(event);
         verify(pluginManager).callEvent(event);
+    }
+
+    @Test
+    void handleIgniteFiresEventWhenGateIsClosedActiveAndNotDestroyed() {
+        Entity entity = mock(Entity.class);
+        Block door = blockAt(100, 64, 100);
+
+        GateDoorIgniteEvent event = hitService.handleIgnite(gate, entity, door, GateDoorIgniteEvent.Cause.FLAMING_PROJECTILE);
+
+        assertNotNull(event);
+        assertSame(gate, event.getGate());
+        assertEquals(GateDoorIgniteEvent.Cause.FLAMING_PROJECTILE, event.getCause());
+        verify(pluginManager).callEvent(event);
+    }
+
+    @Test
+    void handleIgniteDoesNothingWhenGateIsOpen() {
+        gate.setCurrentState(AnimationState.OPEN);
+
+        GateDoorIgniteEvent event = hitService.handleIgnite(gate, null, blockAt(100, 64, 100), GateDoorIgniteEvent.Cause.FIRE_CHARGE);
+
+        assertNull(event);
+        verify(pluginManager, never()).callEvent(any());
+    }
+
+    @Test
+    void handleIgniteDoesNothingWhenGateIsDestroyed() {
+        gate.setIsDestroyed(true);
+
+        GateDoorIgniteEvent event = hitService.handleIgnite(gate, null, blockAt(100, 64, 100), GateDoorIgniteEvent.Cause.FIRE_CHARGE);
+
+        assertNull(event);
+        verify(pluginManager, never()).callEvent(any());
     }
 }

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Tag;
 import net.knightsandkings.knk.api.dto.CreateUserRequestDto;
 import net.knightsandkings.knk.api.dto.DuplicateCheckResponseDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.core.ports.api.UsersQueryApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
@@ -302,7 +303,8 @@ class UserManagerTest {
                 original.experiencePoints(),
                 true, // email now linked
                 false,
-                null
+                null,
+                GatePassThroughMethod.DEFAULT
             );
 
             // Act
@@ -418,7 +420,7 @@ class UserManagerTest {
                         original.uuid(),
                         "thread1@example.com",
                         i, i, i,
-                        true, false, null
+                        true, false, null, GatePassThroughMethod.DEFAULT
                     );
                     userManager.updateCachedUser(testUUID, updated);
                 }
@@ -432,7 +434,7 @@ class UserManagerTest {
                         original.uuid(),
                         "thread2@example.com",
                         i * 2, i * 2, i * 2,
-                        true, false, null
+                        true, false, null, GatePassThroughMethod.DEFAULT
                     );
                     userManager.updateCachedUser(testUUID, updated);
                 }

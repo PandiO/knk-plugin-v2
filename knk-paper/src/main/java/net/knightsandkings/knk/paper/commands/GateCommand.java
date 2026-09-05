@@ -3,7 +3,11 @@ package net.knightsandkings.knk.paper.commands;
 import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.core.ports.api.UsersCommandApi;
+import net.knightsandkings.knk.paper.user.PlayerUserData;
+import net.knightsandkings.knk.paper.user.UserManager;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.ChatColor;
@@ -23,10 +27,15 @@ import java.util.List;
 public class GateCommand implements CommandExecutor {
     private final GateManager gateManager;
     private final GateStructuresApi gateStructuresApi;
+    private final UserManager userManager;
+    private final UsersCommandApi usersCommandApi;
 
-    public GateCommand(GateManager gateManager, GateStructuresApi gateStructuresApi) {
+    public GateCommand(GateManager gateManager, GateStructuresApi gateStructuresApi,
+                        UserManager userManager, UsersCommandApi usersCommandApi) {
         this.gateManager = gateManager;
         this.gateStructuresApi = gateStructuresApi;
+        this.userManager = userManager;
+        this.usersCommandApi = usersCommandApi;
     }
 
     @Override
@@ -44,6 +53,7 @@ public class GateCommand implements CommandExecutor {
             case "close" -> executeClose(sender, subArgs);
             case "info" -> executeInfo(sender, subArgs);
             case "list" -> executeList(sender, subArgs);
+            case "passthrough" -> executePassThrough(sender, subArgs);
             case "admin" -> executeAdmin(sender, subArgs);
             case "help", "?" -> {
                 sendHelp(sender);
@@ -63,9 +73,58 @@ public class GateCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.GRAY + "/knk gate close <name|id>");
         sender.sendMessage(ChatColor.GRAY + "/knk gate info <name|id>");
         sender.sendMessage(ChatColor.GRAY + "/knk gate list");
+        sender.sendMessage(ChatColor.GRAY + "/knk gate passthrough <default|instant|teleport>");
         sender.sendMessage(ChatColor.GRAY + "/knk gate admin health <name|id> <amount>");
         sender.sendMessage(ChatColor.GRAY + "/knk gate admin repair <name|id>");
         sender.sendMessage(ChatColor.GRAY + "/knk gate admin tp <name|id>");
+    }
+
+    /**
+     * Handle /gate passthrough <default|instant|teleport>: sets the sender's own preferred gate
+     * pass-through method, updating the in-memory cache immediately and persisting to the backend
+     * asynchronously (matching the persistHealthChange/persistState reload-on-failure idiom).
+     */
+    public boolean executePassThrough(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(ChatColor.RED + "Only players can set a pass-through method.");
+            return true;
+        }
+
+        if (args.length < 1) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /knk gate passthrough <default|instant|teleport>");
+            return true;
+        }
+
+        GatePassThroughMethod method = switch (args[0].toLowerCase()) {
+            case "default" -> GatePassThroughMethod.DEFAULT;
+            case "instant" -> GatePassThroughMethod.INSTANT_OPEN;
+            case "teleport" -> GatePassThroughMethod.TELEPORT;
+            default -> null;
+        };
+
+        if (method == null) {
+            sender.sendMessage(ChatColor.RED + "Unknown pass-through method '" + args[0] + "'. Use default, instant, or teleport.");
+            return true;
+        }
+
+        PlayerUserData current = userManager.getCachedUser(player.getUniqueId());
+        if (current == null || current.userId() == null) {
+            sender.sendMessage(ChatColor.RED + "Your account isn't loaded yet - try again in a moment.");
+            return true;
+        }
+
+        userManager.updateCachedUser(player.getUniqueId(), current.withGatePassThroughMethodDefault(method));
+
+        if (usersCommandApi != null) {
+            usersCommandApi.setGatePassThroughMethodById(current.userId(), method)
+                .exceptionally(error -> {
+                    sender.sendMessage(ChatColor.RED + "Failed to save your pass-through method; it may reset next time you join.");
+                    return null;
+                });
+        }
+
+        sender.sendMessage(ChatColor.GREEN + "Gate pass-through method set to " + method + ".");
+        return true;
     }
 
     private boolean executeAdmin(CommandSender sender, String[] args) {

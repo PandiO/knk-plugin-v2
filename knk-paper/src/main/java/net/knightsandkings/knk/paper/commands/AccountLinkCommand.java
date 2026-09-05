@@ -12,6 +12,7 @@ import net.knightsandkings.knk.api.dto.LinkCodeResponseDto;
 import net.knightsandkings.knk.api.dto.MergeAccountsRequestDto;
 import net.knightsandkings.knk.api.dto.UserResponseDto;
 import net.knightsandkings.knk.api.dto.ValidateLinkCodeResponseDto;
+import net.knightsandkings.knk.core.domain.users.GatePassThroughMethod;
 import net.knightsandkings.knk.core.ports.api.UserAccountApi;
 import net.knightsandkings.knk.paper.KnKPlugin;
 import net.knightsandkings.knk.paper.chat.ChatCaptureManager;
@@ -174,7 +175,8 @@ public class AccountLinkCommand implements CommandExecutor {
                         userData != null ? userData.experiencePoints() : 0,
                         validation.email() != null && !validation.email().isBlank(),
                         false,
-                        null
+                        null,
+                        userData != null ? userData.gatePassThroughMethodDefault() : GatePassThroughMethod.DEFAULT
                     );
                     
                     userManager.updateCachedUser(player.getUniqueId(), updated);
@@ -271,7 +273,8 @@ public class AccountLinkCommand implements CommandExecutor {
             safeInt(response.experiencePoints()),
             response.email() != null && !response.email().isBlank(),
             false,
-            null
+            null,
+            existing != null ? existing.gatePassThroughMethodDefault() : GatePassThroughMethod.DEFAULT
         );
 
         userManager.updateCachedUser(player.getUniqueId(), updated);

@@ -55,12 +55,14 @@ import net.knightsandkings.knk.paper.gates.GateDisplayUpdateTask;
 import net.knightsandkings.knk.paper.gates.GateDoorHitService;
 import net.knightsandkings.knk.paper.gates.GateFireDamageTask;
 import net.knightsandkings.knk.paper.gates.GateFireSystem;
+import net.knightsandkings.knk.paper.gates.GatePassThroughService;
 import net.knightsandkings.knk.paper.gates.GateStateSyncTask;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
 import net.knightsandkings.knk.paper.listeners.GateDamageConsequenceListener;
 import net.knightsandkings.knk.paper.listeners.GateEventListener;
+import net.knightsandkings.knk.paper.listeners.GatePassThroughConsequenceListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
 import net.knightsandkings.knk.paper.listeners.UserAccountListener;
@@ -355,6 +357,7 @@ public class KnKPlugin extends JavaPlugin {
 
             HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this, gateDisplayManager, gateManager);
             GateDoorHitService gateDoorHitService = new GateDoorHitService(gateManager);
+
             long fireDurationMillis = getConfig().getLong("gates.fire-duration-seconds", 8) * 1000L;
             double fireDamagePerTick = getConfig().getDouble("gates.fire-damage-per-tick", 2.0);
             GateFireSystem gateFireSystem = new GateFireSystem(healthSystem, gateManager, fireDurationMillis, fireDamagePerTick);
@@ -362,9 +365,18 @@ public class KnKPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new GateEventListener(gateDoorHitService), this);
             getServer().getPluginManager().registerEvents(new GateDamageConsequenceListener(healthSystem, gateFireSystem), this);
 
+            int passThroughInstantOpenRadius = getConfig().getInt("gates.passthrough-instant-open-radius-blocks", 1);
+            int passThroughInstantOpenTimeoutSeconds = getConfig().getInt("gates.passthrough-instant-open-timeout-seconds", 5);
+            GatePassThroughService gatePassThroughService = new GatePassThroughService(
+                gateManager, this,
+                passThroughInstantOpenRadius, passThroughInstantOpenTimeoutSeconds);
+            getServer().getPluginManager().registerEvents(
+                new GatePassThroughConsequenceListener(gatePassThroughService, userManager), this);
+
             int fireTickIntervalSeconds = getConfig().getInt("gates.fire-tick-interval-seconds", 1);
             long fireTickIntervalTicks = Math.max(1L, fireTickIntervalSeconds) * 20L;
             new GateFireDamageTask(gateFireSystem).runTaskTimer(this, fireTickIntervalTicks, fireTickIntervalTicks);
+
             WorldGuardIntegration worldGuardIntegration = new WorldGuardIntegration(this);
             for (org.bukkit.World world : getServer().getWorlds()) {
                 new GateAnimationTask(gateManager, world, org.bukkit.Material.STONE, worldGuardIntegration,
@@ -502,6 +514,8 @@ public class KnKPlugin extends JavaPlugin {
                 worldTaskHandlerRegistry,
                 gateManager,
                 gateStructuresApi,
+                userManager,
+                usersCommandApi,
                 serverId
             );
             knkCommand.setExecutor(knkAdminCommand);
