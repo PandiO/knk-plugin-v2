@@ -6,6 +6,7 @@ import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateFrameCalculator;
 import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.core.gates.GateSpatialIndex;
 import net.knightsandkings.knk.paper.integration.WorldGuardIntegration;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -180,6 +181,7 @@ public class GateAnimationTask extends BukkitRunnable {
 
         List<BlockPlacement> placements = new ArrayList<>();
         List<BlockPlacement> vacancies = new ArrayList<>();
+        List<BlockMove> moves = new ArrayList<>();
         Set<Long> targetCells = new HashSet<>();
 
         for (BlockSnapshot block : gate.getBlocks()) {
@@ -196,18 +198,20 @@ public class GateAnimationTask extends BukkitRunnable {
                     return;
                 }
                 placements.add(new BlockPlacement(worldPos, block.getBlockData()));
-                targetCells.add(packCell(worldPos));
+                targetCells.add(GateSpatialIndex.packCell(worldPos));
             }
 
             if (previousPosition != null) {
                 vacancies.add(new BlockPlacement(previousPosition, block.getBlockData()));
             }
+
+            moves.add(new BlockMove(previousPosition, worldPos));
         }
 
         // Clear vacated cells first, but never a cell another block moves into this frame:
         // otherwise a later snapshot erases what an earlier one just placed.
         for (BlockPlacement vacancy : vacancies) {
-            if (targetCells.contains(packCell(vacancy.position()))) {
+            if (targetCells.contains(GateSpatialIndex.packCell(vacancy.position()))) {
                 continue;
             }
             GateBlockPlacer.removeBlockIfMatches(world, vacancy.position(), vacancy.blockData(), fallbackMaterial);
@@ -216,15 +220,41 @@ public class GateAnimationTask extends BukkitRunnable {
         for (BlockPlacement placement : placements) {
             GateBlockPlacer.placeBlockIfVacant(world, placement.position(), placement.blockData(), fallbackMaterial);
         }
-    }
 
-    private static long packCell(Vector position) {
-        return (((long) position.getBlockX() & 0x3FFFFFFL) << 38)
-            | (((long) position.getBlockY() & 0xFFFL) << 26)
-            | ((long) position.getBlockZ() & 0x3FFFFFFL);
+        // Keep the spatial index in lockstep with the block mutations above, so a hit-detection
+        // lookup can never observe a cell that disagrees with the real world block.
+        GateSpatialIndex spatialIndex = gateManager.getSpatialIndex();
+        for (BlockMove move : moves) {
+            spatialIndex.move(gate.getWorldName(), move.previousPosition(), move.worldPos(), gate.getId());
+        }
     }
 
     private record BlockPlacement(Vector position, String blockData) {
+    }
+
+    private record BlockMove(Vector previousPosition, Vector worldPos) {
+    }
+
+    /**
+     * One-time defensive resync of the spatial index at animation completion, correcting any
+     * drift the per-tick move() calls might have accumulated (e.g. under a lag-induced frame
+     * skip, where the assumed single-step "previous frame" doesn't match the actual last frame).
+     */
+    private void resyncSpatialIndex(CachedGate gate, int frame) {
+        List<Vector> positions = new ArrayList<>();
+        for (BlockSnapshot block : gate.getBlocks()) {
+            if (block == null) {
+                continue;
+            }
+            Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, block, frame);
+            if (worldPos != null) {
+                positions.add(worldPos);
+            }
+        }
+
+        GateSpatialIndex spatialIndex = gateManager.getSpatialIndex();
+        spatialIndex.removeAllForGate(gate.getWorldName(), gate.getId());
+        spatialIndex.putAll(gate.getWorldName(), positions, gate.getId());
     }
 
     private void handleEntityPush(CachedGate gate, int currentFrame) {
@@ -269,6 +299,7 @@ public class GateAnimationTask extends BukkitRunnable {
     private void finishOpening(CachedGate gate) {
         gate.setCurrentState(AnimationState.OPEN);
         gate.setCurrentFrame(gate.getAnimationDurationTicks());
+        resyncSpatialIndex(gate, gate.getCurrentFrame());
 
         LOGGER.info("Gate " + gate.getName() + " finished opening");
         gateManager.notifyAnimationCompleted(gate.getId(), AnimationState.OPEN);
@@ -304,6 +335,7 @@ public class GateAnimationTask extends BukkitRunnable {
             Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, block, 0);
             GateBlockPlacer.placeBlock(world, worldPos, block.getBlockData(), fallbackMaterial);
         }
+        resyncSpatialIndex(gate, 0);
 
         LOGGER.info("Gate " + gate.getName() + " finished closing");
         gateManager.notifyAnimationCompleted(gate.getId(), AnimationState.CLOSED);

@@ -1,249 +1,281 @@
 package net.knightsandkings.knk.paper.gates;
 
-import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
+import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
+import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorInteractEvent;
 import net.knightsandkings.knk.paper.listeners.GateEventListener;
-import org.bukkit.ChatColor;
+import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.entity.Projectile;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.util.Vector;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for GateEventListener handling block breaks, explosions, and interactions.
+ * Unit tests for GateEventListener: adapting raw Bukkit events into GateDoorHitService lookups
+ * and GateDoorInteractEvent/GateDoorDamageEvent firing.
  */
 class GateEventListenerTest {
+
+    private GateManager gateManager;
     private GateEventListener listener;
-    private GateManager mockGateManager;
-    private HealthSystem mockHealthSystem;
-    private CachedGate testGate;
+    private CachedGate gate;
+    private MockedStatic<Bukkit> bukkitMock;
+    private PluginManager pluginManager;
 
     @BeforeEach
     void setUp() {
-        mockGateManager = mock(GateManager.class);
-        mockHealthSystem = mock(HealthSystem.class);
-        listener = new GateEventListener(mockGateManager, mockHealthSystem);
-        
-        // Create a test gate
-        testGate = new CachedGate(
-            1,
-            "TestGate",
-            "SLIDING",
-            "VERTICAL",
-            "PLANE_GRID",
-            60,
-            1,
-            new Vector(100, 64, 100),
-            5,
-            3,
-            1,
-            500.0,
-            500.0,
-            true,
-            false,
-            true,
-            90,
-            "north"
+        gateManager = new GateManager();
+        listener = new GateEventListener(new GateDoorHitService(gateManager));
+
+        gate = new CachedGate(
+            1, "TestGate", "SLIDING", "VERTICAL", "PLANE_GRID",
+            60, 1, new Vector(100, 64, 100), 5, 5, 3,
+            500.0, 500.0, true, false, false, 90, "north"
         );
-        testGate.setCurrentState(AnimationState.CLOSED);
-        
-        // Setup gateManager to return our test gate
-        when(mockGateManager.getAllGates()).thenReturn(new HashMap<>());
+        gate.setWorldName("world");
+        gate.setUAxis(new Vector(1, 0, 0));
+        gate.setVAxis(new Vector(0, 1, 0));
+        gate.setNAxis(new Vector(0, 0, 1));
+        gate.setMotionVector(new Vector(0, 3, 0));
+        gate.setCurrentState(AnimationState.CLOSED);
+        gate.setCurrentFrame(0);
+        gate.addBlock(new BlockSnapshot(1, new Vector(0, 0, 0), 1, "stone", 0));
+        gateManager.cacheGate(gate);
+
+        pluginManager = mock(PluginManager.class);
+        bukkitMock = mockStatic(Bukkit.class);
+        bukkitMock.when(Bukkit::getPluginManager).thenReturn(pluginManager);
     }
 
-    // ===== BlockBreakEvent Tests =====
-
-    @Test
-    void testBlockBreakEvent_PlayerWithAdminPermission() {
-        // Admin player should be able to break gate blocks
-        Block block = mock(Block.class);
-        Player player = mock(Player.class);
-        when(player.hasPermission("knk.gate.admin")).thenReturn(true);
-        
-        BlockBreakEvent event = mock(BlockBreakEvent.class);
-        when(event.getBlock()).thenReturn(block);
-        when(event.getPlayer()).thenReturn(player);
-        when(event.isCancelled()).thenReturn(false);
-        
-        listener.onBlockBreak(event);
-        
-        // Event should NOT be cancelled (admin allowed)
-        verify(event, never()).setCancelled(true);
+    @AfterEach
+    void tearDown() {
+        bukkitMock.close();
     }
 
-    @Test
-    void testBlockBreakEvent_PlayerWithoutAdminPermission() {
-        // Regular player should NOT be able to break gate blocks
+    private Block doorBlock() {
         Block block = mock(Block.class);
+        when(block.getX()).thenReturn(100);
+        when(block.getY()).thenReturn(64);
+        when(block.getZ()).thenReturn(100);
+        World world = mock(World.class);
+        when(world.getName()).thenReturn("world");
+        when(block.getWorld()).thenReturn(world);
+        return block;
+    }
+
+    private Block unrelatedBlock() {
+        Block block = mock(Block.class);
+        when(block.getX()).thenReturn(0);
+        when(block.getY()).thenReturn(0);
+        when(block.getZ()).thenReturn(0);
+        World world = mock(World.class);
+        when(world.getName()).thenReturn("world");
+        when(block.getWorld()).thenReturn(world);
+        return block;
+    }
+
+    // ===== BlockBreakEvent =====
+
+    @Test
+    void blockBreakOnDoorBlockIsCancelledAndDamagesTheGateForNonAdmin() {
+        Block block = doorBlock();
         Player player = mock(Player.class);
         when(player.hasPermission("knk.gate.admin")).thenReturn(false);
-        
+
         BlockBreakEvent event = mock(BlockBreakEvent.class);
         when(event.getBlock()).thenReturn(block);
         when(event.getPlayer()).thenReturn(player);
-        when(event.isCancelled()).thenReturn(false);
-        
-        List<String> messages = new ArrayList<>();
-        doAnswer(inv -> {
-            messages.add(inv.getArgument(0));
-            return null;
-        }).when(player).sendMessage(anyString());
-        
+
         listener.onBlockBreak(event);
-        
-        // Event should be cancelled (prevent breaking)
-        // Note: This test is simplified because we can't directly verify gate block detection
-        // In production, this would require a spatial index
+
+        verify(event).setCancelled(true);
+        ArgumentCaptor<GateDoorDamageEvent> captor = ArgumentCaptor.forClass(GateDoorDamageEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertEquals(GateDoorDamageEvent.Cause.BLOCK_BREAK, captor.getValue().getCause());
+        assertSame(gate, captor.getValue().getGate());
     }
 
-    // ===== EntityExplodeEvent Tests =====
+    @Test
+    void blockBreakOnDoorBlockIsAllowedForAdmin() {
+        Block block = doorBlock();
+        Player player = mock(Player.class);
+        when(player.hasPermission("knk.gate.admin")).thenReturn(true);
+
+        BlockBreakEvent event = mock(BlockBreakEvent.class);
+        when(event.getBlock()).thenReturn(block);
+        when(event.getPlayer()).thenReturn(player);
+
+        listener.onBlockBreak(event);
+
+        verify(event, never()).setCancelled(true);
+        verify(pluginManager, never()).callEvent(any());
+    }
 
     @Test
-    void testEntityExplodeEvent_InvincibleGate() {
-        // Explosion on invincible gate should not damage it
-        // Note: CachedGate doesn't have a setter for invincible after construction
-        // In production, this would be set during gate creation
-        
-        Block block = mock(Block.class);
+    void blockBreakOnUnrelatedBlockIsIgnored() {
+        Block block = unrelatedBlock();
+        Player player = mock(Player.class);
+
+        BlockBreakEvent event = mock(BlockBreakEvent.class);
+        when(event.getBlock()).thenReturn(block);
+        when(event.getPlayer()).thenReturn(player);
+
+        listener.onBlockBreak(event);
+
+        verify(event, never()).setCancelled(anyBoolean());
+        verify(pluginManager, never()).callEvent(any());
+    }
+
+    // ===== EntityExplodeEvent / BlockExplodeEvent =====
+
+    @Test
+    void entityExplodeProtectsDoorBlockAndDamagesTheGate() {
+        Block block = doorBlock();
         Entity entity = mock(Entity.class);
-        
-        List<Block> blockList = new ArrayList<>();
-        blockList.add(block);
-        
+        List<Block> blockList = new ArrayList<>(List.of(block));
+
         EntityExplodeEvent event = mock(EntityExplodeEvent.class);
         when(event.blockList()).thenReturn(blockList);
         when(event.getEntity()).thenReturn(entity);
-        
-        // This test is simplified - we can't easily test the full gate detection
-        // In production, you'd mock the entire gate detection system
+
         listener.onEntityExplode(event);
-        
-        // Event was processed
-        assertNotNull(event);
+
+        assertTrue(blockList.isEmpty());
+        ArgumentCaptor<GateDoorDamageEvent> captor = ArgumentCaptor.forClass(GateDoorDamageEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertEquals(GateDoorDamageEvent.Cause.EXPLOSION, captor.getValue().getCause());
+        assertSame(entity, captor.getValue().getCausingEntity());
     }
 
     @Test
-    void testEntityExplodeEvent_VulnerableGate() {
-        // Explosion on vulnerable gate should damage it
-        // Note: CachedGate doesn't have a setter for invincible, it's set during construction
-        // This test demonstrates the health damage system
-        
-        double initialHealth = testGate.getHealthCurrent();
-        
-        Block block = mock(Block.class);
-        Entity entity = mock(Entity.class);
-        
-        List<Block> blockList = new ArrayList<>();
-        blockList.add(block);
-        
-        EntityExplodeEvent event = mock(EntityExplodeEvent.class);
+    void blockExplodeProtectsDoorBlockWithNoCausingEntity() {
+        Block block = doorBlock();
+        List<Block> blockList = new ArrayList<>(List.of(block));
+
+        BlockExplodeEvent event = mock(BlockExplodeEvent.class);
         when(event.blockList()).thenReturn(blockList);
-        when(event.getEntity()).thenReturn(entity);
-        
-        listener.onEntityExplode(event);
-        
-        // Event was processed
-        assertNotNull(event);
+
+        listener.onBlockExplode(event);
+
+        assertTrue(blockList.isEmpty());
+        ArgumentCaptor<GateDoorDamageEvent> captor = ArgumentCaptor.forClass(GateDoorDamageEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertNull(captor.getValue().getCausingEntity());
     }
 
-    // ===== Permission & State Tests =====
+    // ===== ProjectileHitEvent =====
 
     @Test
-    void testGateStateTracking() {
-        // Verify gate can track state changes
-        assertEquals(AnimationState.CLOSED, testGate.getCurrentState());
-        
-        testGate.setCurrentState(AnimationState.OPENING);
-        assertEquals(AnimationState.OPENING, testGate.getCurrentState());
-        
-        testGate.setCurrentState(AnimationState.OPEN);
-        assertEquals(AnimationState.OPEN, testGate.getCurrentState());
-    }
+    void projectileHitOnDoorBlockDamagesTheGateWithTheShooter() {
+        Block block = doorBlock();
+        LivingEntity shooter = mock(LivingEntity.class);
+        Projectile projectile = mock(Projectile.class);
+        when(projectile.getShooter()).thenReturn(shooter);
 
-    @Test
-    void testGateHealthTracking() {
-        // Verify gate health system works
-        assertEquals(500.0, testGate.getHealthCurrent());
-        
-        testGate.setHealthCurrent(250.0);
-        assertEquals(250.0, testGate.getHealthCurrent());
-        
-        // Health can be set to values within range
-        testGate.setHealthCurrent(100.0);
-        assertEquals(100.0, testGate.getHealthCurrent());
+        ProjectileHitEvent event = mock(ProjectileHitEvent.class);
+        when(event.getHitBlock()).thenReturn(block);
+        when(event.getEntity()).thenReturn(projectile);
+
+        listener.onProjectileHit(event);
+
+        ArgumentCaptor<GateDoorDamageEvent> captor = ArgumentCaptor.forClass(GateDoorDamageEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertEquals(GateDoorDamageEvent.Cause.PROJECTILE, captor.getValue().getCause());
+        assertSame(shooter, captor.getValue().getCausingEntity());
     }
 
     @Test
-    void testGateDestructionTracking() {
-        // Verify gate can be destroyed
-        assertFalse(testGate.isDestroyed());
-        
-        testGate.setIsDestroyed(true);
-        assertTrue(testGate.isDestroyed());
-        
-        testGate.setIsActive(false);
-        assertFalse(testGate.isActive());
+    void projectileHitOnAnEntityIsIgnored() {
+        ProjectileHitEvent event = mock(ProjectileHitEvent.class);
+        when(event.getHitBlock()).thenReturn(null);
+
+        listener.onProjectileHit(event);
+
+        verify(pluginManager, never()).callEvent(any());
+    }
+
+    // ===== PlayerInteractEvent =====
+
+    @Test
+    void rightClickOnDoorFiresInteractEventAndPropagatesCancellation() {
+        Block block = doorBlock();
+        Player player = mock(Player.class);
+        when(player.hasPermission("knk.gate.open.*")).thenReturn(true);
+
+        PlayerInteractEvent event = mock(PlayerInteractEvent.class);
+        when(event.getClickedBlock()).thenReturn(block);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getAction()).thenReturn(Action.RIGHT_CLICK_BLOCK);
+
+        doAnswer(inv -> {
+            GateDoorInteractEvent fired = inv.getArgument(0);
+            fired.setCancelled(true);
+            return null;
+        }).when(pluginManager).callEvent(any(GateDoorInteractEvent.class));
+
+        listener.onPlayerInteract(event);
+
+        verify(event).setCancelled(true);
     }
 
     @Test
-    void testMultipleGatesInManager() {
-        // Verify manager can handle multiple gates
-        CachedGate gate1 = createTestGate(1, "Gate1");
-        CachedGate gate2 = createTestGate(2, "Gate2");
-        CachedGate gate3 = createTestGate(3, "Gate3");
-        
-        var allGates = new HashMap<Integer, CachedGate>();
-        allGates.put(1, gate1);
-        allGates.put(2, gate2);
-        allGates.put(3, gate3);
-        
-        when(mockGateManager.getAllGates()).thenReturn(allGates);
-        
-        assertEquals(3, mockGateManager.getAllGates().size());
-        assertNotNull(mockGateManager.getAllGates().get(1));
-        assertNotNull(mockGateManager.getAllGates().get(2));
-        assertNotNull(mockGateManager.getAllGates().get(3));
+    void rightClickWithoutPermissionIsDenied() {
+        Block block = doorBlock();
+        Player player = mock(Player.class);
+        when(player.hasPermission("knk.gate.open.*")).thenReturn(false);
+        when(player.hasPermission("knk.gate.close.*")).thenReturn(false);
+
+        PlayerInteractEvent event = mock(PlayerInteractEvent.class);
+        when(event.getClickedBlock()).thenReturn(block);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getAction()).thenReturn(Action.RIGHT_CLICK_BLOCK);
+
+        listener.onPlayerInteract(event);
+
+        verify(event).setCancelled(true);
+        verify(pluginManager, never()).callEvent(any());
     }
 
-    // ===== Helper Methods =====
+    @Test
+    void leftClickOnDoorFiresDamageEvent() {
+        Block block = doorBlock();
+        Player player = mock(Player.class);
 
-    private CachedGate createTestGate(int id, String name) {
-        CachedGate gate = new CachedGate(
-            id,
-            name,
-            "SLIDING",
-            "VERTICAL",
-            "PLANE_GRID",
-            60,
-            1,
-            new Vector(100 + id * 10, 64, 100 + id * 10),
-            5,
-            3,
-            1,
-            500.0,
-            500.0,
-            true,
-            false,
-            true,
-            90,
-            "north"
-        );
-        gate.setCurrentState(AnimationState.CLOSED);
-        return gate;
+        PlayerInteractEvent event = mock(PlayerInteractEvent.class);
+        when(event.getClickedBlock()).thenReturn(block);
+        when(event.getPlayer()).thenReturn(player);
+        when(event.getAction()).thenReturn(Action.LEFT_CLICK_BLOCK);
+
+        listener.onPlayerInteract(event);
+
+        ArgumentCaptor<GateDoorDamageEvent> captor = ArgumentCaptor.forClass(GateDoorDamageEvent.class);
+        verify(pluginManager).callEvent(captor.capture());
+        assertEquals(GateDoorDamageEvent.Cause.LEFT_CLICK, captor.getValue().getCause());
+        assertSame(player, captor.getValue().getCausingEntity());
     }
 }

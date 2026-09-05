@@ -2,6 +2,7 @@ package net.knightsandkings.knk.paper.gates;
 
 import net.knightsandkings.knk.api.GateStructuresApi;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
+import net.knightsandkings.knk.core.gates.GateManager;
 import org.bukkit.util.Vector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -30,7 +31,7 @@ public class HealthSystemTest {
     @BeforeEach
     public void setUp() throws Exception {
         MockitoAnnotations.openMocks(this);
-        healthSystem = new HealthSystem(mockGateStructuresApi, mockPlugin, null);
+        healthSystem = new HealthSystem(mockGateStructuresApi, mockPlugin, null, new GateManager());
     }
 
     @Test

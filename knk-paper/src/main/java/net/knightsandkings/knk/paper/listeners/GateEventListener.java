@@ -1,20 +1,23 @@
 package net.knightsandkings.knk.paper.listeners;
 
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
-import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
-import net.knightsandkings.knk.core.gates.GateFrameCalculator;
-import net.knightsandkings.knk.core.gates.GateManager;
-import net.knightsandkings.knk.paper.gates.HealthSystem;
+import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorInteractEvent;
+import net.knightsandkings.knk.paper.gates.GateDoorHitService;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Vector;
+import org.bukkit.entity.Projectile;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 
 import java.util.HashSet;
@@ -22,32 +25,33 @@ import java.util.Set;
 import java.util.logging.Logger;
 
 /**
- * Gate event listener handling block break, explosions, and player interactions.
- * Prevents damage to gate blocks and manages gate health.
- * Integrates with HealthSystem for damage/destruction/respawn mechanics.
+ * Adapts raw Bukkit events (block break, explosions, clicks, projectile hits) into
+ * GateDoorHitService lookups, translating an O(1) spatial-index resolution into the
+ * GateDoorInteractEvent / GateDoorDamageEvent custom events other systems react to.
+ * Detection lives in GateDoorHitService; this class only wires Bukkit events to it and
+ * propagates any resulting cancellation back onto the originating event.
  */
 public class GateEventListener implements Listener {
     private static final Logger LOGGER = Logger.getLogger(GateEventListener.class.getName());
 
-    private final GateManager gateManager;
-    private final HealthSystem healthSystem;
+    private final GateDoorHitService hitService;
 
-    public GateEventListener(GateManager gateManager, HealthSystem healthSystem) {
-        this.gateManager = gateManager;
-        this.healthSystem = healthSystem;
+    public GateEventListener(GateDoorHitService hitService) {
+        this.hitService = hitService;
     }
 
     /**
      * Handle block break attempts on gate blocks.
-     * Prevents breaking gate blocks unless player has admin permission.
+     * Prevents breaking gate blocks unless player has admin permission, and registers damage
+     * on the gate for a completed break attempt (in addition to left-click punch damage - see
+     * onPlayerInteract - both are kept as independent damage sources).
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
         Player player = event.getPlayer();
 
-        // Check if block is part of any gate
-        CachedGate gate = findGateContainingBlock(block);
+        CachedGate gate = hitService.resolveDoorGate(block.getWorld().getName(), block);
         if (gate == null) {
             return;
         }
@@ -65,45 +69,77 @@ public class GateEventListener implements Listener {
                 .color(NamedTextColor.RED)
         );
 
-        // Gate damage should not be bypassed by block breaking; keep gate integrity in sync.
-        if (!gate.isInvincible()) {
-            healthSystem.applyDamage(gate, 10.0);
-        }
+        hitService.handleDamage(gate, player, block, GateDoorDamageEvent.Cause.BLOCK_BREAK);
     }
 
     /**
-     * Handle explosions that might damage gate blocks.
-     * Apply damage to gate if not invincible, or cancel explosion if invincible.
+     * Handle explosions caused by an entity (creeper, TNT primed by an entity, etc.) that might
+     * hit gate blocks. Gate blocks are always protected from vanilla destruction; damage is
+     * registered separately via GateDoorDamageEvent.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
         Set<Block> blocksToRemove = new HashSet<>();
 
-        // Check each block affected by explosion
         for (Block block : event.blockList()) {
-            CachedGate gate = findGateContainingBlock(block);
+            CachedGate gate = hitService.resolveDoorGate(block.getWorld().getName(), block);
             if (gate == null) {
                 continue;
             }
 
-            if (gate.isInvincible()) {
-                // Invincible gate: protect block from explosion
-                blocksToRemove.add(block);
-            } else {
-                // Vulnerable gate: apply damage via HealthSystem
-                double damageAmount = 10.0; // Configurable damage amount
-                healthSystem.applyDamage(gate, damageAmount);
-                blocksToRemove.add(block);
-            }
+            blocksToRemove.add(block);
+            hitService.handleDamage(gate, event.getEntity(), block, GateDoorDamageEvent.Cause.EXPLOSION);
         }
 
-        // Remove protected blocks from explosion
         event.blockList().removeAll(blocksToRemove);
     }
 
     /**
-     * Handle player interact events on gate blocks.
-     * Optional: Can be used to trigger gate open/close with right-click.
+     * Handle explosions with no causing entity (e.g. a bed/respawn-anchor detonation).
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        Set<Block> blocksToRemove = new HashSet<>();
+
+        for (Block block : event.blockList()) {
+            CachedGate gate = hitService.resolveDoorGate(block.getWorld().getName(), block);
+            if (gate == null) {
+                continue;
+            }
+
+            blocksToRemove.add(block);
+            hitService.handleDamage(gate, null, block, GateDoorDamageEvent.Cause.EXPLOSION);
+        }
+
+        event.blockList().removeAll(blocksToRemove);
+    }
+
+    /**
+     * Handle an arrow or other projectile hitting a gate's door block.
+     */
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void onProjectileHit(ProjectileHitEvent event) {
+        Block hitBlock = event.getHitBlock();
+        if (hitBlock == null) {
+            // Hit an entity instead of a block - not relevant to gate doors.
+            return;
+        }
+
+        CachedGate gate = hitService.resolveDoorGate(hitBlock.getWorld().getName(), hitBlock);
+        if (gate == null) {
+            return;
+        }
+
+        Entity shooter = event.getEntity() instanceof Projectile projectile && projectile.getShooter() instanceof Entity shooterEntity
+            ? shooterEntity
+            : null;
+
+        hitService.handleDamage(gate, shooter, hitBlock, GateDoorDamageEvent.Cause.PROJECTILE);
+    }
+
+    /**
+     * Handle player interact events on gate door blocks: right-click for the (future)
+     * pass-through feature, left-click punch as a melee damage source.
      */
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onPlayerInteract(PlayerInteractEvent event) {
@@ -112,17 +148,15 @@ public class GateEventListener implements Listener {
             return;
         }
 
-        CachedGate gate = findGateContainingBlock(clickedBlock);
+        CachedGate gate = hitService.resolveDoorGate(clickedBlock.getWorld().getName(), clickedBlock);
         if (gate == null) {
             return;
         }
 
-        // Right-click to toggle gate
-        if (event.getAction().isRightClick()) {
-            Player player = event.getPlayer();
+        Player player = event.getPlayer();
 
-            // Check permission
-            if (!player.hasPermission("knk.gate.open.*") && 
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            if (!player.hasPermission("knk.gate.open.*") &&
                 !player.hasPermission("knk.gate.close.*")) {
                 player.sendMessage(
                     Component.text("You don't have permission to interact with this gate.")
@@ -132,68 +166,12 @@ public class GateEventListener implements Listener {
                 return;
             }
 
-            // Toggle gate state
-            // Note: This is optional functionality and can be enabled/disabled per configuration
-            // For now, we'll log the interaction but not toggle automatically
-            LOGGER.fine("Player " + player.getName() + " interacted with gate: " + gate.getName());
-        }
-    }
-
-    /**
-     * Find gate containing the given block.
-     * Returns null if block is not part of any gate.
-     */
-    private CachedGate findGateContainingBlock(Block block) {
-        // This is a simple O(n*m) implementation
-        // In production, consider a spatial index for better performance
-        
-        for (CachedGate gate : gateManager.getAllGates().values()) {
-            if (!gate.isActive()) {
-                continue;
+            GateDoorInteractEvent interactEvent = hitService.handleInteract(gate, player, clickedBlock);
+            if (interactEvent != null && interactEvent.isCancelled()) {
+                event.setCancelled(true);
             }
-
-            // Check if block is part of this gate's blocks
-            // Note: This checks the anchor point + geometry, not current frame position
-            // For animated gates, we'd need to check the current animation frame
-            // For now, we check against stored gate block snapshots
-
-            if (gate.getBlocks() != null && !gate.getBlocks().isEmpty()) {
-                // Check if block location matches any gate block
-                // This is simplified - in production you'd want better collision detection
-                if (isBlockPartOfGate(block, gate)) {
-                    return gate;
-                }
-            }
+        } else if (event.getAction() == Action.LEFT_CLICK_BLOCK) {
+            hitService.handleDamage(gate, player, clickedBlock, GateDoorDamageEvent.Cause.LEFT_CLICK);
         }
-
-        return null;
-    }
-
-    /**
-     * Check if a block is part of a gate's structure.
-     * Simplified implementation - checks stored block snapshots.
-     */
-    private boolean isBlockPartOfGate(Block block, CachedGate gate) {
-        if (block == null || gate == null || gate.getBlocks() == null) {
-            return false;
-        }
-
-        int blockX = block.getX();
-        int blockY = block.getY();
-        int blockZ = block.getZ();
-
-        int frame = gate.getCurrentFrame();
-        for (BlockSnapshot snapshot : gate.getBlocks()) {
-            Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, snapshot, frame);
-            if (worldPos == null) {
-                continue;
-            }
-
-            if (worldPos.getBlockX() == blockX && worldPos.getBlockY() == blockY && worldPos.getBlockZ() == blockZ) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

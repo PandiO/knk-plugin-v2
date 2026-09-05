@@ -5,6 +5,7 @@ import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateFrameCalculator;
+import net.knightsandkings.knk.core.gates.GateManager;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -15,6 +16,8 @@ import org.bukkit.Material;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Logger;
 
 /**
@@ -27,6 +30,7 @@ public class HealthSystem {
     private final GateStructuresApi gateStructuresApi;
     private final Plugin plugin;
     private final GateDisplayManager displayManager;
+    private final GateManager gateManager;
 
     /**
      * Create a new health system.
@@ -34,11 +38,13 @@ public class HealthSystem {
      * @param gateStructuresApi The API client for persisting state
      * @param plugin The plugin instance for scheduler access
      * @param displayManager Manager used to refresh the gate's info display on health/state changes
+     * @param gateManager Owner of the door-block spatial index, kept in sync on destroy/respawn
      */
-    public HealthSystem(GateStructuresApi gateStructuresApi, Plugin plugin, GateDisplayManager displayManager) {
+    public HealthSystem(GateStructuresApi gateStructuresApi, Plugin plugin, GateDisplayManager displayManager, GateManager gateManager) {
         this.gateStructuresApi = gateStructuresApi;
         this.plugin = plugin;
         this.displayManager = displayManager;
+        this.gateManager = gateManager;
     }
 
     /**
@@ -95,6 +101,11 @@ public class HealthSystem {
 
         LOGGER.info("Destroying gate: '" + gate.getName() + "'");
 
+        // Capture the frame the door blocks actually occupy right now, before resetting state
+        // below - a gate destroyed while OPEN or mid-animation must have ITS blocks removed,
+        // not whatever sits at frame 0.
+        int frameAtDeath = gate.getCurrentFrame();
+
         // Update state
         gate.setIsDestroyed(true);
         gate.setIsActive(false);
@@ -104,7 +115,7 @@ public class HealthSystem {
         gate.setHealthCurrent(0);
 
         // Remove all gate blocks from the world
-        removeGateBlocks(gate);
+        removeGateBlocks(gate, frameAtDeath);
 
         // Ensure a destroyed gate does not remain in an animating or open state.
         gate.setCurrentState(AnimationState.CLOSED);
@@ -124,12 +135,14 @@ public class HealthSystem {
     }
 
     /**
-     * Remove all block data associated with a gate from the world.
-     * This clears the visual representation of the gate.
-     * 
+     * Remove all block data associated with a gate from the world, at the given animation
+     * frame (the frame the door blocks actually occupied at the moment of removal - callers
+     * must capture this before resetting the gate's currentFrame).
+     *
      * @param gate The gate whose blocks to remove
+     * @param frame The animation frame the blocks currently occupy
      */
-    private void removeGateBlocks(CachedGate gate) {
+    private void removeGateBlocks(CachedGate gate, int frame) {
         try {
             World world = Bukkit.getWorlds().get(0); // Get main world
             if (world == null) {
@@ -137,17 +150,20 @@ public class HealthSystem {
                 return;
             }
 
+            List<Vector> positions = new ArrayList<>();
             int blocksRemoved = 0;
             for (BlockSnapshot blockSnapshot : gate.getBlocks()) {
                 Vector worldPos = GateFrameCalculator.calculateBlockPosition(
                     gate,
                     blockSnapshot,
-                    gate.getCurrentFrame()
+                    frame
                 );
 
                 if (worldPos == null) {
                     continue;
                 }
+
+                positions.add(worldPos);
 
                 Block block = world.getBlockAt(
                     worldPos.getBlockX(),
@@ -159,6 +175,10 @@ public class HealthSystem {
                     block.setType(org.bukkit.Material.AIR, false);
                     blocksRemoved++;
                 }
+            }
+
+            if (gateManager != null) {
+                gateManager.getSpatialIndex().removeAll(gate.getWorldName(), positions);
             }
 
             LOGGER.info("Removed " + blocksRemoved + " blocks from destroyed gate: '" + gate.getName() + "'");
@@ -250,13 +270,19 @@ public class HealthSystem {
                 return;
             }
 
+            List<Vector> positions = new ArrayList<>();
             for (BlockSnapshot blockSnapshot : gate.getBlocks()) {
                 Vector worldPos = GateFrameCalculator.calculateBlockPosition(gate, blockSnapshot, 0);
                 if (worldPos == null) {
                     continue;
                 }
 
+                positions.add(worldPos);
                 GateBlockPlacer.placeBlock(world, worldPos, blockSnapshot.getBlockData(), Material.STONE);
+            }
+
+            if (gateManager != null) {
+                gateManager.getSpatialIndex().putAll(gate.getWorldName(), positions, gate.getId());
             }
         } catch (Exception e) {
             LOGGER.warning("Error restoring gate blocks: " + e.getMessage());

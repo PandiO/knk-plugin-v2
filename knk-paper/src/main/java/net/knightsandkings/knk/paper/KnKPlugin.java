@@ -52,10 +52,12 @@ import net.knightsandkings.knk.paper.gates.GateAnimationTask;
 import net.knightsandkings.knk.paper.gates.GateDisplayManager;
 import net.knightsandkings.knk.paper.gates.GateDisplayOrphanCleanupTask;
 import net.knightsandkings.knk.paper.gates.GateDisplayUpdateTask;
+import net.knightsandkings.knk.paper.gates.GateDoorHitService;
 import net.knightsandkings.knk.paper.gates.GateStateSyncTask;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
 import net.knightsandkings.knk.paper.listeners.ChatCaptureListener;
+import net.knightsandkings.knk.paper.listeners.GateDamageConsequenceListener;
 import net.knightsandkings.knk.paper.listeners.GateEventListener;
 import net.knightsandkings.knk.paper.listeners.PlayerListener;
 import net.knightsandkings.knk.paper.listeners.RegionTaskEventListener;
@@ -349,8 +351,10 @@ public class KnKPlugin extends JavaPlugin {
             );
             registerEvents(regionTracker);
 
-            HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this, gateDisplayManager);
-            getServer().getPluginManager().registerEvents(new GateEventListener(gateManager, healthSystem), this);
+            HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this, gateDisplayManager, gateManager);
+            GateDoorHitService gateDoorHitService = new GateDoorHitService(gateManager);
+            getServer().getPluginManager().registerEvents(new GateEventListener(gateDoorHitService), this);
+            getServer().getPluginManager().registerEvents(new GateDamageConsequenceListener(healthSystem), this);
 
             WorldGuardIntegration worldGuardIntegration = new WorldGuardIntegration(this);
             for (org.bukkit.World world : getServer().getWorlds()) {

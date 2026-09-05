@@ -1,9 +1,13 @@
 package net.knightsandkings.knk.core.gates;
 
 import net.knightsandkings.knk.core.domain.gates.AnimationState;
+import net.knightsandkings.knk.core.domain.gates.BlockSnapshot;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
+import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,11 +25,21 @@ public class GateManager {
 
     private final Map<Integer, CachedGate> gateCache;
     private final Map<Integer, Consumer<AnimationState>> animationCompletionCallbacks;
+    private final GateSpatialIndex spatialIndex;
     private Supplier<CompletableFuture<Void>> reloadAction;
 
     public GateManager() {
         this.gateCache = new HashMap<>();
         this.animationCompletionCallbacks = new ConcurrentHashMap<>();
+        this.spatialIndex = new GateSpatialIndex();
+    }
+
+    /**
+     * Spatial index of door-block world positions, kept in sync with every code path that
+     * moves/places/removes a gate's animated blocks. See GateSpatialIndex for update contract.
+     */
+    public GateSpatialIndex getSpatialIndex() {
+        return spatialIndex;
     }
 
     /**
@@ -90,10 +104,35 @@ public class GateManager {
             LOGGER.warning("Attempted to cache null gate");
             return;
         }
-        
+
+        CachedGate previous = gateCache.get(gate.getId());
+        if (previous != null) {
+            spatialIndex.removeAll(previous.getWorldName(), doorBlockPositions(previous, previous.getCurrentFrame()));
+        }
+
         gateCache.put(gate.getId(), gate);
-        LOGGER.info("Cached gate: " + gate.getName() + " (ID: " + gate.getId() + 
+        spatialIndex.putAll(gate.getWorldName(), doorBlockPositions(gate, gate.getCurrentFrame()), gate.getId());
+
+        LOGGER.info("Cached gate: " + gate.getName() + " (ID: " + gate.getId() +
                    ") with " + gate.getBlocks().size() + " blocks");
+    }
+
+    /**
+     * World positions of a gate's door blocks at the given animation frame, skipping any
+     * block clipped away by ClipToGeometryBounds (see GateFrameCalculator).
+     */
+    private static List<Vector> doorBlockPositions(CachedGate gate, int frame) {
+        List<Vector> positions = new ArrayList<>();
+        for (BlockSnapshot block : gate.getBlocks()) {
+            if (block == null) {
+                continue;
+            }
+            Vector position = GateFrameCalculator.calculateBlockPosition(gate, block, frame);
+            if (position != null) {
+                positions.add(position);
+            }
+        }
+        return positions;
     }
 
     // === Public API for accessing gates ===
