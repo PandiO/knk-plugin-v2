@@ -33,16 +33,28 @@ public interface GateStructuresApi {
     CompletableFuture<GateStructureDto> getById(int id);
 
     /**
-     * Update the state (IsOpened) of a gate structure.
+     * Update the state (IsOpened, IsDestroyed, IsJammed) of a gate structure.
      * Calls PUT /api/GateStructures/{id}/state
      *
      * @param id Gate structure ID
      * @param isOpened New opened state
+     * @param isDestroyed New destroyed state
+     * @param isJammed New jammed state
      * @return CompletableFuture that completes when update is done
      */
-    CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed);
+    CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed, boolean isJammed);
 
     CompletableFuture<Void> updateOperationalSettings(int id, boolean isActive, boolean isInvincible);
+
+    /**
+     * Update the current health of a gate structure.
+     * Calls PUT /api/GateStructures/{id}/health
+     *
+     * @param id Gate structure ID
+     * @param healthCurrent New current health value
+     * @return CompletableFuture that completes when update is done
+     */
+    CompletableFuture<Void> updateGateHealth(int id, double healthCurrent);
 
     /**
      * Get all block snapshots for a specific gate.

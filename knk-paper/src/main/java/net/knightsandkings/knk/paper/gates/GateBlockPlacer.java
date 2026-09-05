@@ -100,8 +100,8 @@ public class GateBlockPlacer {
             return false;
         }
 
-        if (block.getBlockData().matches(desired)) {
-            return true;
+        if (isExpectedGateBlock(block, desired)) {
+            return placeBlock(world, position, blockData, fallbackMaterial);
         }
 
         if (!isReplaceable(block)) {
@@ -134,7 +134,7 @@ public class GateBlockPlacer {
         }
 
         BlockData expected = parseBlockData(expectedBlockData, fallbackMaterial);
-        if (expected == null || !block.getBlockData().matches(expected)) {
+        if (expected == null || !isExpectedGateBlock(block, expected)) {
             LOGGER.fine("Skipped gate block removal at " + describe(position) + ": found "
                 + block.getType() + " instead of the expected gate block");
             return false;
@@ -152,6 +152,10 @@ public class GateBlockPlacer {
 
     private static boolean isReplaceable(Block block) {
         return block.getType() == Material.AIR || block.isLiquid() || block.isReplaceable();
+    }
+
+    private static boolean isExpectedGateBlock(Block block, BlockData expected) {
+        return block.getBlockData().matches(expected) || block.getType() == expected.getMaterial();
     }
 
     private static String describe(Vector position) {

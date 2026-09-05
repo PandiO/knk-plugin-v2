@@ -54,6 +54,10 @@ class GateCommandTest {
         when(mockPlayer.hasPermission(anyString())).thenReturn(true);
         when(mockGateStructuresApi.updateOperationalSettings(anyInt(), anyBoolean(), anyBoolean()))
             .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
+        when(mockGateStructuresApi.updateGateHealth(anyInt(), anyDouble()))
+            .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
+        when(mockGateStructuresApi.updateGateState(anyInt(), anyBoolean(), anyBoolean(), anyBoolean()))
+            .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
     }
 
     // ===== Player Commands =====

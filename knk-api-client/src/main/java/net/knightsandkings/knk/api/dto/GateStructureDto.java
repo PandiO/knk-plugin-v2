@@ -39,6 +39,9 @@ public class GateStructureDto {
     @JsonProperty("isOpened")
     private Boolean isOpened;
 
+    @JsonProperty("isJammed")
+    private Boolean isJammed;
+
     @JsonProperty("isDestroyed")
     private Boolean isDestroyed;
 
@@ -245,6 +248,14 @@ public class GateStructureDto {
 
     public void setIsOpened(Boolean isOpened) {
         this.isOpened = isOpened;
+    }
+
+    public Boolean getIsJammed() {
+        return isJammed;
+    }
+
+    public void setIsJammed(Boolean isJammed) {
+        this.isJammed = isJammed;
     }
 
     public Boolean getIsDestroyed() {

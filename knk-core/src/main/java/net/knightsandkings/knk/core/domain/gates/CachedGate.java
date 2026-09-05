@@ -53,6 +53,9 @@ public class CachedGate {
     private boolean isActive;
     private boolean isDestroyed;
     private boolean isInvincible;
+    // Orthogonal to AnimationState: true when the current OPENING/CLOSING animation is
+    // stalled by a non-replaceable obstruction (see GateAnimationTask.updateGateBlocks).
+    private boolean isJammed;
 
     // === Rotation (for DRAWBRIDGE/DOUBLE_DOORS) ===
     private final int rotationMaxAngleDegrees;
@@ -232,6 +235,10 @@ public class CachedGate {
         return isInvincible;
     }
 
+    public boolean isJammed() {
+        return isJammed;
+    }
+
     public int getRotationMaxAngleDegrees() {
         return rotationMaxAngleDegrees;
     }
@@ -316,6 +323,10 @@ public class CachedGate {
 
     public void setIsInvincible(boolean isInvincible) {
         this.isInvincible = isInvincible;
+    }
+
+    public void setIsJammed(boolean isJammed) {
+        this.isJammed = isJammed;
     }
 
     public void setRegionClosedId(String regionClosedId) {

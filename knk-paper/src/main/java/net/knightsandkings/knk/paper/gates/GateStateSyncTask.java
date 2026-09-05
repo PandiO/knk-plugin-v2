@@ -87,11 +87,18 @@ public class GateStateSyncTask {
             || gate.getCurrentState() == AnimationState.OPENING;
 
         try {
-            gateStructuresApi.updateGateState(gate.getId(), isOpened, gate.isDestroyed()).join();
+            gateStructuresApi.updateGateState(gate.getId(), isOpened, gate.isDestroyed(), gate.isJammed()).join();
             LOGGER.fine("Gate state synced to API: " + gate.getName() +
-                " (opened=" + isOpened + ", destroyed=" + gate.isDestroyed() + ")");
+                " (opened=" + isOpened + ", destroyed=" + gate.isDestroyed() + ", jammed=" + gate.isJammed() + ")");
         } catch (Exception e) {
             LOGGER.warning("Failed to sync gate state for '" + gate.getName() + "': " + e.getMessage());
+        }
+
+        try {
+            gateStructuresApi.updateGateHealth(gate.getId(), gate.getHealthCurrent()).join();
+            LOGGER.fine("Gate health synced to API: " + gate.getName() + " (health=" + gate.getHealthCurrent() + ")");
+        } catch (Exception e) {
+            LOGGER.warning("Failed to sync gate health for '" + gate.getName() + "': " + e.getMessage());
         }
     }
 

@@ -201,9 +201,7 @@ public class GateLoaderAdapter {
 
         switch (motionType) {
             case "VERTICAL":
-                Vector vAxis = gate.getVAxis();
-                Vector verticalAxis = vAxis != null && vAxis.lengthSquared() > 0 ? vAxis.clone() : new Vector(0, 1, 0);
-                gate.setMotionVector(verticalAxis.multiply(distance));
+                gate.setMotionVector(new Vector(0, distance, 0));
                 break;
             case "LATERAL":
                 // Slides sideways along the door plane, not through it.
@@ -254,6 +252,11 @@ public class GateLoaderAdapter {
         sortedSnapshots.sort(Comparator.comparingInt(GateBlockSnapshotDto::sortOrder));
 
         for (GateBlockSnapshotDto dto : sortedSnapshots) {
+            String blockData = resolveBlockData(dto);
+            if (isAirBlock(blockData)) {
+                continue;
+            }
+
             Vector relativePos = new Vector(
                 dto.relativeX() != null ? dto.relativeX() : 0,
                 dto.relativeY() != null ? dto.relativeY() : 0,
@@ -264,7 +267,7 @@ public class GateLoaderAdapter {
                 dto.id(),
                 relativePos,
                 0, // no minecraftBlockRefId in the API contract; block identity travels via blockData/materialName
-                resolveBlockData(dto),
+                blockData,
                 dto.sortOrder() != null ? dto.sortOrder() : 0
             );
 
@@ -283,5 +286,24 @@ public class GateLoaderAdapter {
             return dto.blockDataJson();
         }
         return dto.materialName() != null ? dto.materialName() : "";
+    }
+
+    private boolean isAirBlock(String blockData) {
+        if (blockData == null || blockData.isBlank()) {
+            return true;
+        }
+
+        String normalized = blockData.trim().toLowerCase();
+        int stateStart = normalized.indexOf('[');
+        if (stateStart >= 0) {
+            normalized = normalized.substring(0, stateStart);
+        }
+
+        return "air".equals(normalized)
+            || "minecraft:air".equals(normalized)
+            || "cave_air".equals(normalized)
+            || "minecraft:cave_air".equals(normalized)
+            || "void_air".equals(normalized)
+            || "minecraft:void_air".equals(normalized);
     }
 }

@@ -62,6 +62,123 @@ class GateLoaderAdapterTest {
     }
 
     @Test
+    void loadAndCacheGate_ComputesBasisVectorsForDiagonalFaceDirection() {
+        // High-risk case flagged in the roadmap (docs/features/gate-structure-animation/
+        // IMPLEMENTATION_ROADMAP.md, Risk Management: "Diagonal Gate Geometry Calculation"):
+        // a diagonal reference point must produce a correctly signed, correctly ordered
+        // cross product, not just the trivial axis-aligned case.
+        GateManager gateManager = new GateManager();
+        GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
+
+        GateStructureDto dto = new GateStructureDto();
+        dto.setId(2);
+        dto.setName("Diagonal Gate");
+        dto.setGateType("SLIDING");
+        dto.setMotionType("VERTICAL");
+        dto.setGeometryDefinitionMode("PLANE_GRID");
+        dto.setAnimationDurationTicks(60);
+        dto.setAnimationTickRate(1);
+        dto.setAnchorPoint("{\"x\":0,\"y\":0,\"z\":0}");
+        // Diagonal (northeast-style) width axis instead of a straight cardinal direction.
+        dto.setReferencePoint1("{\"x\":1,\"y\":0,\"z\":1}");
+        dto.setReferencePoint2("{\"x\":0,\"y\":1,\"z\":0}");
+
+        adapter.loadAndCacheGate(dto, new ArrayList<>());
+
+        CachedGate gate = gateManager.getGate(2);
+        assertNotNull(gate);
+
+        double diag = 1 / Math.sqrt(2);
+        Vector uAxis = gate.getUAxis();
+        Vector vAxis = gate.getVAxis();
+        Vector nAxis = gate.getNAxis();
+
+        assertEquals(diag, uAxis.getX(), EPSILON);
+        assertEquals(0, uAxis.getY(), EPSILON);
+        assertEquals(diag, uAxis.getZ(), EPSILON);
+
+        assertEquals(0, vAxis.getX(), EPSILON);
+        assertEquals(1, vAxis.getY(), EPSILON);
+        assertEquals(0, vAxis.getZ(), EPSILON);
+
+        // n = u x v must resolve to (-diag, 0, diag), not (diag, 0, diag) or another
+        // sign/order permutation - this is exactly the class of bug diagonal gates risk.
+        assertEquals(-diag, nAxis.getX(), EPSILON);
+        assertEquals(0, nAxis.getY(), EPSILON);
+        assertEquals(diag, nAxis.getZ(), EPSILON);
+    }
+
+    @Test
+    void loadAndCacheGate_KeepsVerticalMotionOnWorldYWhenReferencePointIsOffset() {
+        GateManager gateManager = new GateManager();
+        GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
+
+        GateStructureDto dto = new GateStructureDto();
+        dto.setId(12);
+        dto.setName("Offset Vertical Gate");
+        dto.setGateType("SLIDING");
+        dto.setMotionType("VERTICAL");
+        dto.setGeometryDefinitionMode("PLANE_GRID");
+        dto.setAnimationDurationTicks(60);
+        dto.setAnimationTickRate(1);
+        dto.setGeometryWidth(3);
+        dto.setGeometryHeight(8);
+        dto.setGeometryDepth(1);
+        dto.setMotionDistanceBlocks(3);
+        dto.setAnchorPoint("{\"x\":1416.699999988079,\"y\":65,\"z\":-531.4505220512867}");
+        dto.setReferencePoint1("{\"x\":1414.300000011921,\"y\":65,\"z\":-531.4283039056044}");
+        dto.setReferencePoint2("{\"x\":1416,\"y\":72,\"z\":-532}");
+
+        adapter.loadAndCacheGate(dto, new ArrayList<>());
+
+        CachedGate gate = gateManager.getGate(12);
+        assertNotNull(gate);
+
+        Vector motion = gate.getMotionVector();
+        assertEquals(0, motion.getX(), EPSILON);
+        assertEquals(3, motion.getY(), EPSILON);
+        assertEquals(0, motion.getZ(), EPSILON);
+    }
+
+    @Test
+    void loadAndCacheGate_FallsBackToDefaultAxesWhenReferencePointsMissing() {
+        GateManager gateManager = new GateManager();
+        GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
+
+        GateStructureDto dto = new GateStructureDto();
+        dto.setId(3);
+        dto.setName("No Reference Points Gate");
+        dto.setGateType("SLIDING");
+        dto.setMotionType("VERTICAL");
+        dto.setGeometryDefinitionMode("PLANE_GRID");
+        dto.setAnimationDurationTicks(60);
+        dto.setAnimationTickRate(1);
+        dto.setAnchorPoint("{\"x\":0,\"y\":0,\"z\":0}");
+        // referencePoint1/2 left null - adapter must fall back to standard axes.
+
+        adapter.loadAndCacheGate(dto, new ArrayList<>());
+
+        CachedGate gate = gateManager.getGate(3);
+        assertNotNull(gate);
+
+        Vector uAxis = gate.getUAxis();
+        Vector vAxis = gate.getVAxis();
+        Vector nAxis = gate.getNAxis();
+
+        assertEquals(1, uAxis.getX(), EPSILON);
+        assertEquals(0, uAxis.getY(), EPSILON);
+        assertEquals(0, uAxis.getZ(), EPSILON);
+
+        assertEquals(0, vAxis.getX(), EPSILON);
+        assertEquals(1, vAxis.getY(), EPSILON);
+        assertEquals(0, vAxis.getZ(), EPSILON);
+
+        assertEquals(0, nAxis.getX(), EPSILON);
+        assertEquals(0, nAxis.getY(), EPSILON);
+        assertEquals(1, nAxis.getZ(), EPSILON);
+    }
+
+    @Test
     void loadAndCacheGate_UsesBlockDataJsonFromRealApiContract() {
         GateManager gateManager = new GateManager();
         GateLoaderAdapter adapter = new GateLoaderAdapter(gateManager);
@@ -82,8 +199,11 @@ class GateLoaderAdapterTest {
         GateBlockSnapshotDto snapshotWithoutBlockData = new GateBlockSnapshotDto(
             2, 11, 1, 0, 0, 1, 0, 0, "minecraft:water", "", "{}", 1
         );
+        GateBlockSnapshotDto airSnapshot = new GateBlockSnapshotDto(
+            3, 11, 2, 0, 0, 2, 0, 0, "minecraft:air", "minecraft:air", "{}", 2
+        );
 
-        adapter.loadAndCacheGate(dto, List.of(snapshotWithBlockData, snapshotWithoutBlockData));
+        adapter.loadAndCacheGate(dto, List.of(snapshotWithBlockData, snapshotWithoutBlockData, airSnapshot));
 
         List<BlockSnapshot> blocks = gateManager.getGate(11).getBlocks();
         assertEquals(2, blocks.size());

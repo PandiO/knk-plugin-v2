@@ -55,7 +55,11 @@ public class GateDisplayManager {
         }
 
         World world = resolveWorld(gate);
-        if (world == null || !gate.isActive()) {
+        // destroyGate() sets isActive=false as part of disabling animation/interaction, but a
+        // destroyed gate should still show its info hover (DESTROYED status, buildStatusLine
+        // below already handles this) rather than vanish - only a merely-deactivated,
+        // not-destroyed gate hides its display entirely.
+        if (world == null || (!gate.isActive() && !gate.isDestroyed())) {
             removeDisplay(gate.getId());
             return;
         }
@@ -73,6 +77,10 @@ public class GateDisplayManager {
         }
 
         TextDisplay display = displays.get(gate.getId());
+        if (display != null && display.isValid() && world.equals(display.getWorld())) {
+            removeDuplicateEntities(world, gate.getId(), display);
+        }
+
         // isValid() (not isDead()) is the reliable check here: a display whose chunk unloaded and
         // later reloaded keeps a Java reference that is never "dead" but no longer represents the
         // entity actually being rendered, so re-teleporting it silently does nothing and leaves the
@@ -82,8 +90,10 @@ public class GateDisplayManager {
                 display.remove();
             }
             final int gateId = gate.getId();
-            removeDuplicateEntities(world, gateId);
-            display = world.spawn(location, TextDisplay.class, entity -> configureDisplay(entity, gateId));
+            display = adoptExistingDisplay(world, gateId);
+            if (display == null) {
+                display = world.spawn(location, TextDisplay.class, entity -> configureDisplay(entity, gateId));
+            }
             displays.put(gate.getId(), display);
         } else {
             display.teleport(location);
@@ -97,10 +107,27 @@ public class GateDisplayManager {
      * know about (e.g. a stale entity orphaned by a chunk unload/reload cycle - see {@link #syncDisplay}).
      * Called right before spawning a replacement so a respawn never leaves an old copy behind.
      */
-    private void removeDuplicateEntities(World world, int gateId) {
+    private TextDisplay adoptExistingDisplay(World world, int gateId) {
+        TextDisplay adopted = null;
         for (TextDisplay entity : world.getEntitiesByClass(TextDisplay.class)) {
             Integer taggedId = entity.getPersistentDataContainer().get(gateIdKey, PersistentDataType.INTEGER);
-            if (taggedId != null && taggedId == gateId) {
+            if (taggedId == null || taggedId != gateId) {
+                continue;
+            }
+
+            if (adopted == null && entity.isValid()) {
+                adopted = entity;
+            } else {
+                entity.remove();
+            }
+        }
+        return adopted;
+    }
+
+    private void removeDuplicateEntities(World world, int gateId, TextDisplay keep) {
+        for (TextDisplay entity : world.getEntitiesByClass(TextDisplay.class)) {
+            Integer taggedId = entity.getPersistentDataContainer().get(gateIdKey, PersistentDataType.INTEGER);
+            if (taggedId != null && taggedId == gateId && !entity.equals(keep)) {
                 entity.remove();
             }
         }

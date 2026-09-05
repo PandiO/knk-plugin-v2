@@ -127,6 +127,45 @@ class GateFrameCalculatorTest {
     }
 
     @Test
+    void verticalClippingShouldKeepAllColumnsWhenReferencePointIsOffset() {
+        CachedGate clippedGate = new CachedGate(
+            12, "Offset Vertical Gate", "SLIDING", "VERTICAL", "PLANE_GRID",
+            60, 1,
+            new Vector(1416.699999988079, 65, -531.4505220512867),
+            3, 8, 1,
+            500.0, 500.0, true, false, true, 90,
+            "south"
+        );
+
+        clippedGate.setUAxis(new Vector(-0.999957151538227, 0, 0.009257164120684738));
+        clippedGate.setVAxis(new Vector(-0.0992015755606904, 0.992015772500933, -0.07787011310929316));
+        clippedGate.setNAxis(new Vector(-0.009228107140689485, -0.07916991666000288, -0.996818421947873));
+        clippedGate.setMotionVector(new Vector(0, 3, 0));
+        clippedGate.setClipToGeometryBounds(true);
+
+        assertNotNull(GateFrameCalculator.calculateBlockPosition(
+            clippedGate,
+            new BlockSnapshot(1, new Vector(-2, 2, 0), 1, "minecraft:spruce_fence", 0),
+            60
+        ));
+        assertNotNull(GateFrameCalculator.calculateBlockPosition(
+            clippedGate,
+            new BlockSnapshot(2, new Vector(-1, 2, 0), 1, "minecraft:spruce_fence", 0),
+            60
+        ));
+        assertNotNull(GateFrameCalculator.calculateBlockPosition(
+            clippedGate,
+            new BlockSnapshot(3, new Vector(0, 2, 0), 1, "minecraft:spruce_fence", 0),
+            60
+        ));
+        assertNull(GateFrameCalculator.calculateBlockPosition(
+            clippedGate,
+            new BlockSnapshot(4, new Vector(0, 5, 0), 1, "minecraft:spruce_fence", 0),
+            60
+        ));
+    }
+
+    @Test
     void shouldCalculateAngleStep() {
         double angleStep = GateFrameCalculator.calculateAngleStep(gate);
         
@@ -189,10 +228,13 @@ class GateFrameCalculatorTest {
         // At 45 frames (50% of 90): 45 degrees rotation
         // Position should be rotated 45 degrees around Z-axis
         Vector pos45 = GateFrameCalculator.calculateBlockPosition(rotationGate, block, 45);
-        
-        // After 45 degree rotation: (5, 0) becomes (5*cos(45), 5*sin(45)) ≈ (3.536, 3.536)
-        assertNotEquals(pos0.getX(), pos45.getX(), "X should change after rotation");
-        assertNotEquals(pos0.getY(), pos45.getY(), "Y should change after rotation");
+
+        // Rodrigues' formula around axis (0,0,1) for v=(5,0,0): rotated offset is
+        // (5*cos(45), 5*sin(45), 0), added to the anchor (100, 64, 100).
+        double offset = 5 * Math.cos(Math.toRadians(45));
+        assertEquals(100 + offset, pos45.getX(), EPSILON);
+        assertEquals(64 + offset, pos45.getY(), EPSILON);
+        assertEquals(100, pos45.getZ(), EPSILON);
     }
 
     @Test

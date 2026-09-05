@@ -104,14 +104,15 @@ public class GateStructuresApiImpl extends BaseApiImpl implements GateStructures
     }
 
     @Override
-    public CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed) {
+    public CompletableFuture<Void> updateGateState(int id, boolean isOpened, boolean isDestroyed, boolean isJammed) {
         return CompletableFuture.supplyAsync(() -> {
             String url = baseUrl + GATE_STRUCTURES_ENDPOINT + "/" + id + "/state";
-            
+
             try {
                 Map<String, Boolean> payload = new HashMap<>();
                 payload.put("isOpened", isOpened);
                 payload.put("isDestroyed", isDestroyed);
+                payload.put("isJammed", isJammed);
                 String json = objectMapper.writeValueAsString(payload);
                 
                 Request request = newRequest(url)
@@ -158,6 +159,32 @@ public class GateStructuresApiImpl extends BaseApiImpl implements GateStructures
                 throw e;
             } catch (IOException e) {
                 ApiException apiEx = new ApiException(url, 0, "IO error updating gate operational settings",
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+                apiEx.initCause(e);
+                throw apiEx;
+            }
+        }, executor);
+    }
+
+    @Override
+    public CompletableFuture<Void> updateGateHealth(int id, double healthCurrent) {
+        return CompletableFuture.supplyAsync(() -> {
+            String url = baseUrl + GATE_STRUCTURES_ENDPOINT + "/" + id + "/health";
+
+            try {
+                Map<String, Double> payload = new HashMap<>();
+                payload.put("healthCurrent", healthCurrent);
+                String json = objectMapper.writeValueAsString(payload);
+                Request request = newRequest(url)
+                    .addHeader("Content-Type", "application/json")
+                    .put(RequestBody.create(json, MediaType.get("application/json")))
+                    .build();
+                execute(request, url);
+                return null;
+            } catch (ApiException e) {
+                throw e;
+            } catch (IOException e) {
+                ApiException apiEx = new ApiException(url, 0, "IO error updating gate health",
                     e.getClass().getSimpleName() + ": " + e.getMessage());
                 apiEx.initCause(e);
                 throw apiEx;

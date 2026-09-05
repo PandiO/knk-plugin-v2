@@ -7,6 +7,10 @@ import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateFrameCalculator;
 import net.knightsandkings.knk.core.gates.GateManager;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.plugin.Plugin;
@@ -109,10 +113,15 @@ public class HealthSystem {
         // Update state
         gate.setIsDestroyed(true);
         gate.setIsActive(false);
+        gate.setIsJammed(false);
         gate.setCurrentState(AnimationState.CLOSED);
         gate.setCurrentFrame(0);
         gate.setAnimationStartTime(0);
         gate.setHealthCurrent(0);
+
+        // Cosmetic destruction effect (particle + sound only - no real explosion, so it can't
+        // damage terrain or knock back nearby players).
+        playDestructionEffect(gate);
 
         // Remove all gate blocks from the world
         removeGateBlocks(gate, frameAtDeath);
@@ -127,11 +136,32 @@ public class HealthSystem {
 
         // Persist destruction to API
         persistGateState(gate);
+        persistHealthChange(gate);
 
         // Schedule respawn if enabled
         if (gate.isCanRespawn()) {
             scheduleRespawn(gate);
         }
+    }
+
+    /**
+     * Play a cosmetic-only explosion effect (particle + sound) at the gate's anchor point.
+     * Deliberately does not call World.createExplosion - no terrain damage or entity knockback.
+     */
+    private void playDestructionEffect(CachedGate gate) {
+        Vector anchor = gate.getAnchorPoint();
+        if (anchor == null) {
+            return;
+        }
+
+        World world = Bukkit.getWorld(gate.getWorldName());
+        if (world == null) {
+            return;
+        }
+
+        Location location = new Location(world, anchor.getX(), anchor.getY(), anchor.getZ());
+        world.spawnParticle(Particle.EXPLOSION, location, 1);
+        world.playSound(location, Sound.ENTITY_GENERIC_EXPLODE, SoundCategory.BLOCKS, 1.0f, 1.0f);
     }
 
     /**
@@ -144,9 +174,9 @@ public class HealthSystem {
      */
     private void removeGateBlocks(CachedGate gate, int frame) {
         try {
-            World world = Bukkit.getWorlds().get(0); // Get main world
+            World world = Bukkit.getWorld(gate.getWorldName());
             if (world == null) {
-                LOGGER.warning("Could not find world to remove gate blocks");
+                LOGGER.warning("Could not find world '" + gate.getWorldName() + "' to remove gate blocks for '" + gate.getName() + "'");
                 return;
             }
 
@@ -171,8 +201,22 @@ public class HealthSystem {
                     worldPos.getBlockZ()
                 );
 
-                if (block.getType().isOccluding()) {
-                    block.setType(org.bukkit.Material.AIR, false);
+                // These are specifically the gate's own door blocks - remove them
+                // unconditionally rather than only when occluding, so gates built from
+                // glass, iron bars, slabs, etc. are actually cleared on destruction.
+                if (block.getType() != Material.AIR) {
+                    // Bukkit's BlockBreakEvent is only a notification the server fires as part of
+                    // a real player's dig sequence - calling it manually here wouldn't itself
+                    // remove the block or show anything, since there's no player initiating a
+                    // break. Particle.BLOCK is the actual mechanism for the vanilla block-break
+                    // particle burst; capture the texture before clearing the block to air.
+                    world.spawnParticle(
+                        Particle.BLOCK,
+                        worldPos.getBlockX() + 0.5, worldPos.getBlockY() + 0.5, worldPos.getBlockZ() + 0.5,
+                        20, 0.3, 0.3, 0.3, 0,
+                        block.getBlockData()
+                    );
+                    block.setType(Material.AIR, false);
                     blocksRemoved++;
                 }
             }
@@ -234,14 +278,12 @@ public class HealthSystem {
         // Update state
         gate.setIsDestroyed(false);
         gate.setIsActive(true);
+        gate.setIsJammed(false);
         gate.setCurrentState(AnimationState.CLOSED);
         gate.setCurrentFrame(0);
         gate.setAnimationStartTime(0);
         gate.setHealthCurrent(gate.getHealthMax());
         gate.setRespawnScheduledTime(0);
-        gate.setIsActive(true);
-        gate.setCurrentState(AnimationState.CLOSED);
-        gate.setCurrentFrame(0);
 
         restoreGateBlocks(gate);
 
@@ -251,6 +293,7 @@ public class HealthSystem {
 
         // Persist respawn to API
         persistGateState(gate);
+        persistHealthChange(gate);
 
         // Notify players
         Bukkit.getServer().broadcast(
@@ -264,9 +307,9 @@ public class HealthSystem {
      */
     private void restoreGateBlocks(CachedGate gate) {
         try {
-            World world = Bukkit.getWorlds().get(0); // Get main world
+            World world = Bukkit.getWorld(gate.getWorldName());
             if (world == null) {
-                LOGGER.warning("Could not find world to restore gate blocks");
+                LOGGER.warning("Could not find world '" + gate.getWorldName() + "' to restore gate blocks for '" + gate.getName() + "'");
                 return;
             }
 
@@ -301,13 +344,13 @@ public class HealthSystem {
         }
 
         // Run API call asynchronously to avoid blocking the server thread
+        double healthCurrent = gate.getHealthCurrent();
         new BukkitRunnable() {
             @Override
             public void run() {
                 try {
-                    // TODO: Call updateGateHealth() method on API when available
-                    // For now, we'll log that this would persist
-                    LOGGER.fine("Health change persisted to API for gate: " + gate.getName());
+                    gateStructuresApi.updateGateHealth(gate.getId(), healthCurrent).join();
+                    LOGGER.fine("Health change persisted to API for gate: " + gate.getName() + " (health=" + healthCurrent + ")");
                 } catch (Exception e) {
                     LOGGER.warning("Failed to persist health change: " + e.getMessage());
                 }
@@ -332,9 +375,9 @@ public class HealthSystem {
             public void run() {
                 try {
                     boolean isOpened = gate.getCurrentState() == AnimationState.OPEN && !gate.isDestroyed();
-                    gateStructuresApi.updateGateState(gate.getId(), isOpened, gate.isDestroyed()).join();
+                    gateStructuresApi.updateGateState(gate.getId(), isOpened, gate.isDestroyed(), gate.isJammed()).join();
                     LOGGER.fine("Gate state persisted to API: " + gate.getName() +
-                               " (destroyed=" + gate.isDestroyed() + ", opened=" + isOpened + ")");
+                               " (destroyed=" + gate.isDestroyed() + ", opened=" + isOpened + ", jammed=" + gate.isJammed() + ")");
                 } catch (Exception e) {
                     LOGGER.warning("Failed to persist gate state: " + e.getMessage());
                 }

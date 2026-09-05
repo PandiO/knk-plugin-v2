@@ -215,7 +215,11 @@ public class GateCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.GOLD + "━━━ Gate Info: " + gate.getName() + " ━━━");
         sender.sendMessage(ChatColor.GRAY + "ID: " + ChatColor.WHITE + gate.getId());
         sender.sendMessage(ChatColor.GRAY + "Type: " + ChatColor.WHITE + gate.getGateType());
-        sender.sendMessage(ChatColor.GRAY + "State: " + formatState(gate.getCurrentState()));
+        String stateLine = formatState(gate.getCurrentState());
+        if (gate.isJammed()) {
+            stateLine += " " + ChatColor.RED + "(JAMMED)";
+        }
+        sender.sendMessage(ChatColor.GRAY + "State: " + stateLine);
         sender.sendMessage(ChatColor.GRAY + "Active: " + ChatColor.WHITE + (gate.isActive() ? "✓" : "✗"));
         sender.sendMessage(ChatColor.GRAY + "Destroyed: " + ChatColor.WHITE + (gate.isDestroyed() ? "✓" : "✗"));
         sender.sendMessage(ChatColor.GRAY + "Health: " + ChatColor.WHITE + 
@@ -251,12 +255,13 @@ public class GateCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.GOLD + "━━━ Gates ━━━");
         for (CachedGate gate : gates) {
             String statusColor = gate.getCurrentState() == AnimationState.OPEN ? ChatColor.GREEN.toString() : ChatColor.RED.toString();
-            String distanceStr = senderLoc != null ? 
+            String distanceStr = senderLoc != null ?
                 String.format(" (%.0fm)", gate.getAnchorPoint().distance(senderLoc.toVector())) : "";
-            
+            String jammedSuffix = gate.isJammed() ? " " + ChatColor.RED + "(JAMMED)" : "";
+
                 sender.sendMessage(ChatColor.AQUA + "#" + gate.getId() + " " + gate.getName() +
                     ChatColor.GRAY + " [" + gate.getGateType() + "]" +
-                    statusColor + " " + gate.getCurrentState() + distanceStr);
+                    statusColor + " " + gate.getCurrentState() + jammedSuffix + distanceStr);
         }
 
         return true;
@@ -308,6 +313,7 @@ public class GateCommand implements CommandExecutor {
         try {
             double amount = Double.parseDouble(args[args.length - 1]);
             gate.setHealthCurrent(Math.max(0, Math.min(amount, gate.getHealthMax())));
+            persistHealthChange(gate);
             sender.sendMessage(ChatColor.GREEN + "Set gate health to " + gate.getHealthCurrent());
             return true;
         } catch (NumberFormatException e) {
@@ -340,7 +346,9 @@ public class GateCommand implements CommandExecutor {
 
         gate.setHealthCurrent(gate.getHealthMax());
         gate.setIsDestroyed(false);
-        sender.sendMessage(ChatColor.GREEN + "Repaired gate '" + gateName + "'. Health: " + 
+        persistHealthChange(gate);
+        persistState(gate);
+        sender.sendMessage(ChatColor.GREEN + "Repaired gate '" + gateName + "'. Health: " +
                 gate.getHealthCurrent() + "/" + gate.getHealthMax());
 
         return true;
@@ -441,6 +449,31 @@ public class GateCommand implements CommandExecutor {
         }
 
         gateStructuresApi.updateOperationalSettings(gate.getId(), gate.isActive(), gate.isInvincible())
+            .exceptionally(error -> {
+                gateManager.reloadGates();
+                return null;
+            });
+    }
+
+    private void persistHealthChange(CachedGate gate) {
+        if (gateStructuresApi == null) {
+            return;
+        }
+
+        gateStructuresApi.updateGateHealth(gate.getId(), gate.getHealthCurrent())
+            .exceptionally(error -> {
+                gateManager.reloadGates();
+                return null;
+            });
+    }
+
+    private void persistState(CachedGate gate) {
+        if (gateStructuresApi == null) {
+            return;
+        }
+
+        boolean isOpened = gate.getCurrentState() == AnimationState.OPEN;
+        gateStructuresApi.updateGateState(gate.getId(), isOpened, gate.isDestroyed(), gate.isJammed())
             .exceptionally(error -> {
                 gateManager.reloadGates();
                 return null;

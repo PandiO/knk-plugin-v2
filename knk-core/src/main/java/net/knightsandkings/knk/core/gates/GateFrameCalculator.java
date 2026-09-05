@@ -64,6 +64,10 @@ public class GateFrameCalculator {
         }
 
         Vector anchor = gate.getAnchorPoint();
+        if ("VERTICAL".equals(gate.getMotionType())) {
+            return isWithinVerticalOpening(gate, anchor, worldPosition);
+        }
+
         Vector uAxis = gate.getUAxis();
         Vector vAxis = gate.getVAxis();
         Vector nAxis = gate.getNAxis();
@@ -84,6 +88,18 @@ public class GateFrameCalculator {
             return true;
         }
         return projection >= -BOUNDS_EPSILON && projection <= extent - 1 + BOUNDS_EPSILON;
+    }
+
+    private static boolean isWithinVerticalOpening(CachedGate gate, Vector anchor, Vector worldPosition) {
+        if (anchor == null || gate.getGeometryHeight() <= 0) {
+            return true;
+        }
+
+        int minY = anchor.getBlockY();
+        int maxY = minY + gate.getGeometryHeight() - 1;
+        int y = worldPosition.getBlockY();
+
+        return y >= minY && y <= maxY;
     }
 
     /**

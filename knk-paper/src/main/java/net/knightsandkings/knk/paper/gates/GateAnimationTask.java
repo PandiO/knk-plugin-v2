@@ -11,7 +11,10 @@ import net.knightsandkings.knk.paper.integration.WorldGuardIntegration;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.World;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -19,6 +22,7 @@ import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
@@ -41,6 +45,16 @@ public class GateAnimationTask extends BukkitRunnable {
     private static final double ENTITY_PUSH_RADIUS = 5.0;
     private static final int ENTITY_COLLISION_FRAMES_THRESHOLD = 2;
 
+    // Consecutive ticks a door block must be blocked by a non-replaceable obstruction before
+    // the gate is marked jammed - filters out a single transient block (e.g. a player mid-swing).
+    private static final int JAM_THRESHOLD_TICKS = 5;
+    private static final long MS_PER_TICK = 50L;
+
+    // Bukkit's playSound has no separate playback-speed control - pitch is the only knob, and
+    // Minecraft couples it directly to sample rate, so the lowest allowed pitch is also the
+    // slowest/deepest the clip can play. Played once, on the tick the gate starts animating.
+    private static final float GATE_SOUND_PITCH = 0.5f;
+
     private final GateManager gateManager;
     private final World world;
     private final Material fallbackMaterial;
@@ -52,6 +66,8 @@ public class GateAnimationTask extends BukkitRunnable {
     private long lastLagCheck = 0;
     private boolean isLagging = false;
     private final Set<Integer> emptySnapshotWarnings = new HashSet<>();
+    private final Map<Integer, AnimationState> lastObservedState = new HashMap<>();
+    private final Map<Integer, Integer> jamTickCounters = new HashMap<>();
 
     /**
      * Create a new gate animation task.
@@ -92,10 +108,22 @@ public class GateAnimationTask extends BukkitRunnable {
 
             AnimationState state = gate.getCurrentState();
 
+            AnimationState previousState = lastObservedState.put(gate.getId(), state);
+            boolean justStartedAnimating = state != previousState
+                && (state == AnimationState.OPENING || state == AnimationState.CLOSING);
+
             // Only process gates that are animating
             if (state != AnimationState.OPENING && state != AnimationState.CLOSING) {
                 emptySnapshotWarnings.remove(gate.getId());
+                jamTickCounters.remove(gate.getId());
                 continue;
+            }
+
+            // While jammed, hold the animation clock still: shift the start time forward by
+            // one tick so the elapsed-time-based frame below stays pinned, instead of skipping
+            // ahead once the obstruction clears. Placement is still retried below every tick.
+            if (gate.isJammed()) {
+                gate.setAnimationStartTime(gate.getAnimationStartTime() + MS_PER_TICK);
             }
 
             // Skip if gate is inactive or destroyed
@@ -132,13 +160,17 @@ public class GateAnimationTask extends BukkitRunnable {
             // Update gate's current frame
             gate.setCurrentFrame(currentFrame);
 
+            playGateSoundIfDue(gate, state, justStartedAnimating);
+
             if (currentFrame == 0 || currentFrame == totalFrames || currentFrame % 20 == 0) {
                 LOGGER.info("[GateAnimation] Gate '" + gate.getName() + "' (ID: " + gate.getId() + ") "
                     + state + " frame " + currentFrame + "/" + totalFrames + " in world '" + world.getName() + "'.");
             }
 
-            // Check if animation should update this frame
-            if (!GateFrameCalculator.shouldUpdateFrame(gate, currentFrame)) {
+            // Check if animation should update this frame (always retry every tick while
+            // jammed, regardless of AnimationTickRate, so an obstruction clearing is noticed
+            // promptly rather than waiting for the next tick-rate-aligned frame).
+            if (!gate.isJammed() && !GateFrameCalculator.shouldUpdateFrame(gate, currentFrame)) {
                 continue;
             }
 
@@ -217,8 +249,11 @@ public class GateAnimationTask extends BukkitRunnable {
             GateBlockPlacer.removeBlockIfMatches(world, vacancy.position(), vacancy.blockData(), fallbackMaterial);
         }
 
+        int blockedCount = 0;
         for (BlockPlacement placement : placements) {
-            GateBlockPlacer.placeBlockIfVacant(world, placement.position(), placement.blockData(), fallbackMaterial);
+            if (!GateBlockPlacer.placeBlockIfVacant(world, placement.position(), placement.blockData(), fallbackMaterial)) {
+                blockedCount++;
+            }
         }
 
         // Keep the spatial index in lockstep with the block mutations above, so a hit-detection
@@ -227,6 +262,58 @@ public class GateAnimationTask extends BukkitRunnable {
         for (BlockMove move : moves) {
             spatialIndex.move(gate.getWorldName(), move.previousPosition(), move.worldPos(), gate.getId());
         }
+
+        handleJamTracking(gate, blockedCount);
+    }
+
+    /**
+     * Track consecutive blocked ticks per gate and flip isJammed once the obstruction has
+     * persisted for JAM_THRESHOLD_TICKS, or clear it as soon as placement fully succeeds again.
+     * Persists the transition immediately so admins/players see it without waiting for the
+     * periodic GateStateSyncTask sweep.
+     */
+    private void handleJamTracking(CachedGate gate, int blockedCount) {
+        if (blockedCount > 0) {
+            int consecutiveTicks = jamTickCounters.merge(gate.getId(), 1, Integer::sum);
+            if (consecutiveTicks >= JAM_THRESHOLD_TICKS && !gate.isJammed()) {
+                gate.setIsJammed(true);
+                LOGGER.warning("[GateAnimation] Gate '" + gate.getName() + "' (ID: " + gate.getId()
+                    + ") is JAMMED - an obstruction is blocking its door blocks.");
+                persistGateState(gate);
+            }
+        } else {
+            jamTickCounters.remove(gate.getId());
+            if (gate.isJammed()) {
+                gate.setIsJammed(false);
+                LOGGER.info("[GateAnimation] Gate '" + gate.getName() + "' (ID: " + gate.getId()
+                    + ") is no longer jammed - resuming animation.");
+                persistGateState(gate);
+            }
+        }
+    }
+
+    /**
+     * Play the gate's open/close sound once, the tick it starts animating.
+     */
+    private void playGateSoundIfDue(CachedGate gate, AnimationState state, boolean justStarted) {
+        if (!justStarted) {
+            return;
+        }
+
+        Sound sound = state == AnimationState.OPENING ? Sound.BLOCK_CHEST_OPEN : Sound.BLOCK_CHEST_CLOSE;
+        playGateSound(gate, sound);
+    }
+
+    /**
+     * Play a gate open/close sound effect at the gate's anchor point.
+     */
+    private void playGateSound(CachedGate gate, Sound sound) {
+        Vector anchor = gate.getAnchorPoint();
+        if (anchor == null) {
+            return;
+        }
+        Location location = new Location(world, anchor.getX(), anchor.getY(), anchor.getZ());
+        world.playSound(location, sound, SoundCategory.BLOCKS, 1.0f, GATE_SOUND_PITCH);
     }
 
     private record BlockPlacement(Vector position, String blockData) {
@@ -267,7 +354,7 @@ public class GateAnimationTask extends BukkitRunnable {
         double radius = entitySearchRadius(gate);
 
         for (Entity entity : world.getNearbyEntities(origin, radius, radius, radius)) {
-            if (entity.isDead()) {
+            if (entity.isDead() || entity instanceof Display) {
                 continue;
             }
 
@@ -363,14 +450,15 @@ public class GateAnimationTask extends BukkitRunnable {
 
         boolean isOpened = gate.getCurrentState() == AnimationState.OPEN;
         boolean isDestroyed = gate.isDestroyed();
+        boolean isJammed = gate.isJammed();
 
         new BukkitRunnable() {
             @Override
             public void run() {
                 try {
-                    gateStructuresApi.updateGateState(gate.getId(), isOpened, isDestroyed).join();
+                    gateStructuresApi.updateGateState(gate.getId(), isOpened, isDestroyed, isJammed).join();
                     LOGGER.fine("Gate state persisted to API: " + gate.getName() +
-                        " (opened=" + isOpened + ", destroyed=" + isDestroyed + ")");
+                        " (opened=" + isOpened + ", destroyed=" + isDestroyed + ", jammed=" + isJammed + ")");
                 } catch (Exception e) {
                     LOGGER.warning("Failed to persist gate state for '" + gate.getName() + "': " + e.getMessage());
                 }
