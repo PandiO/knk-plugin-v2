@@ -53,6 +53,8 @@ import net.knightsandkings.knk.paper.gates.GateDisplayManager;
 import net.knightsandkings.knk.paper.gates.GateDisplayOrphanCleanupTask;
 import net.knightsandkings.knk.paper.gates.GateDisplayUpdateTask;
 import net.knightsandkings.knk.paper.gates.GateDoorHitService;
+import net.knightsandkings.knk.paper.gates.GateFireDamageTask;
+import net.knightsandkings.knk.paper.gates.GateFireSystem;
 import net.knightsandkings.knk.paper.gates.GateStateSyncTask;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
 import net.knightsandkings.knk.paper.http.RegionHttpServer;
@@ -353,9 +355,16 @@ public class KnKPlugin extends JavaPlugin {
 
             HealthSystem healthSystem = new HealthSystem(gateStructuresApi, this, gateDisplayManager, gateManager);
             GateDoorHitService gateDoorHitService = new GateDoorHitService(gateManager);
-            getServer().getPluginManager().registerEvents(new GateEventListener(gateDoorHitService), this);
-            getServer().getPluginManager().registerEvents(new GateDamageConsequenceListener(healthSystem), this);
+            long fireDurationMillis = getConfig().getLong("gates.fire-duration-seconds", 8) * 1000L;
+            double fireDamagePerTick = getConfig().getDouble("gates.fire-damage-per-tick", 2.0);
+            GateFireSystem gateFireSystem = new GateFireSystem(healthSystem, gateManager, fireDurationMillis, fireDamagePerTick);
 
+            getServer().getPluginManager().registerEvents(new GateEventListener(gateDoorHitService), this);
+            getServer().getPluginManager().registerEvents(new GateDamageConsequenceListener(healthSystem, gateFireSystem), this);
+
+            int fireTickIntervalSeconds = getConfig().getInt("gates.fire-tick-interval-seconds", 1);
+            long fireTickIntervalTicks = Math.max(1L, fireTickIntervalSeconds) * 20L;
+            new GateFireDamageTask(gateFireSystem).runTaskTimer(this, fireTickIntervalTicks, fireTickIntervalTicks);
             WorldGuardIntegration worldGuardIntegration = new WorldGuardIntegration(this);
             for (org.bukkit.World world : getServer().getWorlds()) {
                 new GateAnimationTask(gateManager, world, org.bukkit.Material.STONE, worldGuardIntegration,

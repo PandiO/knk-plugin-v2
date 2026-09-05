@@ -1,6 +1,8 @@
 package net.knightsandkings.knk.paper.listeners;
 
 import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorIgniteEvent;
+import net.knightsandkings.knk.paper.gates.GateFireSystem;
 import net.knightsandkings.knk.paper.gates.HealthSystem;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -8,10 +10,11 @@ import org.bukkit.event.Listener;
 import java.util.Map;
 
 /**
- * Consequence listener for GateDoorDamageEvent: owns the damage amount per Cause and applies it
- * via HealthSystem, which already no-ops for invincible/destroyed gates. Kept separate from
- * detection (GateDoorHitService) so future causes/amounts can be tuned here without touching
- * how a hit is detected.
+ * Consequence listener for gate door events: owns the damage amount per GateDoorDamageEvent
+ * Cause and applies it via HealthSystem (which already no-ops for invincible/destroyed gates),
+ * and starts a burn via GateFireSystem for GateDoorIgniteEvent. Kept separate from detection
+ * (GateDoorHitService) so future causes/amounts can be tuned here without touching how a hit is
+ * detected.
  */
 public class GateDamageConsequenceListener implements Listener {
     private static final Map<GateDoorDamageEvent.Cause, Double> DAMAGE_BY_CAUSE = Map.of(
@@ -22,9 +25,11 @@ public class GateDamageConsequenceListener implements Listener {
     );
 
     private final HealthSystem healthSystem;
+    private final GateFireSystem fireSystem;
 
-    public GateDamageConsequenceListener(HealthSystem healthSystem) {
+    public GateDamageConsequenceListener(HealthSystem healthSystem, GateFireSystem fireSystem) {
         this.healthSystem = healthSystem;
+        this.fireSystem = fireSystem;
     }
 
     @EventHandler
@@ -35,5 +40,14 @@ public class GateDamageConsequenceListener implements Listener {
 
         double amount = DAMAGE_BY_CAUSE.getOrDefault(event.getCause(), 10.0);
         healthSystem.applyDamage(event.getGate(), amount);
+    }
+
+    @EventHandler
+    public void onGateDoorIgnite(GateDoorIgniteEvent event) {
+        if (event.isCancelled()) {
+            return;
+        }
+
+        fireSystem.igniteBlock(event.getGate(), event.getHitBlock());
     }
 }

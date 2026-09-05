@@ -94,6 +94,36 @@ public class HealthSystem {
     }
 
     /**
+     * Apply continuous (damage-over-time) damage to a gate, e.g. from a burning door block.
+     * Unlike {@link #applyDamage}, deliberately does NOT persist the health change or refresh
+     * the display on every call: continuous damage is applied on a tight tick interval (see
+     * GateFireSystem/GateFireDamageTask) by potentially many burning gates during a siege, and
+     * writing to the API that often would be wasteful. The in-memory value stays authoritative
+     * for gameplay (destroy check, health display text) immediately; GateStateSyncTask's periodic
+     * sweep - or this call destroying the gate - is what eventually flushes it to the DB. This is
+     * the balance point between data retention and server performance for this damage source.
+     *
+     * @param gate The gate to damage
+     * @param damageAmount The amount of damage to apply
+     */
+    public void applyContinuousDamage(CachedGate gate, double damageAmount) {
+        if (gate == null || damageAmount <= 0) {
+            return;
+        }
+
+        if (gate.isDestroyed() || gate.isInvincible()) {
+            return;
+        }
+
+        double newHealth = Math.max(0, gate.getHealthCurrent() - damageAmount);
+        gate.setHealthCurrent(newHealth);
+
+        if (newHealth <= 0) {
+            destroyGate(gate);
+        }
+    }
+
+    /**
      * Destroy a gate, disabling it and optionally scheduling respawn.
      * 
      * @param gate The gate to destroy

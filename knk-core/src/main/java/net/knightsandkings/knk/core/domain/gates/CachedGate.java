@@ -3,7 +3,9 @@ package net.knightsandkings.knk.core.domain.gates;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Cached representation of a gate structure with precomputed animation data.
@@ -82,6 +84,12 @@ public class CachedGate {
     // === Siege Integration ===
     private Integer currentSiegeId;
 
+    // === Continuous Damage (Fire) ===
+    // World-block position (integer-valued Vector) -> epoch millis when the fire on that block
+    // expires. Populated by GateFireSystem.igniteBlock, drained by GateFireSystem.tick. Only
+    // meaningful while CLOSED - that's the only state where a door block's world position is
+    // stable enough for a burn to track a specific cell.
+    private final Map<Vector, Long> burningBlocks = new HashMap<>();
     public CachedGate(int id, String name, String gateType, String motionType, String geometryDefinitionMode,
                       int animationDurationTicks, int animationTickRate,
                       Vector anchorPoint, int geometryWidth, int geometryHeight, int geometryDepth,
@@ -411,5 +419,17 @@ public class CachedGate {
 
     public boolean isAnimating() {
         return currentState == AnimationState.OPENING || currentState == AnimationState.CLOSING;
+    }
+
+    /**
+     * Mutable map of currently-burning door-block world positions to their fire-expiry
+     * timestamp (epoch millis). Owned and managed by GateFireSystem.
+     */
+    public Map<Vector, Long> getBurningBlocks() {
+        return burningBlocks;
+    }
+
+    public boolean isOnFire() {
+        return !burningBlocks.isEmpty();
     }
 }

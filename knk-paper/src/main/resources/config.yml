@@ -73,6 +73,16 @@ gates:
   # Runs in addition to the one-shot cleanup at startup, so a duplicate that appears while the
   # server is running gets fixed without needing a restart.
   display-cleanup-interval-seconds: 60
+  # Continuous damage ("fire") system: a gate door block set alight by a flaming projectile or
+  # fire charge burns for fire-duration-seconds, dealing fire-damage-per-tick HealthCurrent
+  # damage to its owning gate every fire-tick-interval-seconds for each door block still burning
+  # (so several burning blocks stack damage). Health changes apply immediately in memory, so the
+  # health display stays live; DB persistence is left to the existing state-sync-interval-seconds
+  # sweep above rather than writing on every fire tick, to stay affordable during a siege with
+  # several gates burning at once.
+  fire-duration-seconds: 8
+  fire-damage-per-tick: 2.0
+  fire-tick-interval-seconds: 1
 
 # Messages configuration
 messages:

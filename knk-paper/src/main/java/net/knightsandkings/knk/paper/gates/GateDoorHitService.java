@@ -4,6 +4,7 @@ import net.knightsandkings.knk.core.domain.gates.AnimationState;
 import net.knightsandkings.knk.core.domain.gates.CachedGate;
 import net.knightsandkings.knk.core.gates.GateManager;
 import net.knightsandkings.knk.paper.events.GateDoorDamageEvent;
+import net.knightsandkings.knk.paper.events.GateDoorIgniteEvent;
 import net.knightsandkings.knk.paper.events.GateDoorInteractEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.block.Block;
@@ -63,6 +64,23 @@ public class GateDoorHitService {
         }
 
         GateDoorDamageEvent event = new GateDoorDamageEvent(gate, cause, causingEntity, hitBlock);
+        Bukkit.getPluginManager().callEvent(event);
+        return event;
+    }
+
+    /**
+     * Fire a GateDoorIgniteEvent for a hit that should set the gate's door block alight (a
+     * flaming projectile or fire charge), iff the gate is closed, active, and not already
+     * destroyed - same qualification as handleDamage, since a door block only occupies a stable
+     * world position (the thing that actually "catches fire") while CLOSED. Returns the fired
+     * event, or null if the gate doesn't qualify.
+     */
+    public GateDoorIgniteEvent handleIgnite(CachedGate gate, Entity causingEntity, Block hitBlock, GateDoorIgniteEvent.Cause cause) {
+        if (gate == null || gate.getCurrentState() != AnimationState.CLOSED || !gate.isActive() || gate.isDestroyed()) {
+            return null;
+        }
+
+        GateDoorIgniteEvent event = new GateDoorIgniteEvent(gate, cause, causingEntity, hitBlock);
         Bukkit.getPluginManager().callEvent(event);
         return event;
     }
